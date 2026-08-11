@@ -12,6 +12,7 @@
     "ingest": "tsx scripts/ingest.ts",
     "eval": "tsx scripts/eval.ts",
     "factbench": "tsx scripts/factbench.ts",
+    "variability": "tsx scripts/variability.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
