@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "extract": "tsx scripts/extract.ts",
+    "diagnose": "tsx scripts/diagnose.ts",
     "ingest": "tsx scripts/ingest.ts",
     "eval": "tsx scripts/eval.ts",
     "factbench": "tsx scripts/factbench.ts",

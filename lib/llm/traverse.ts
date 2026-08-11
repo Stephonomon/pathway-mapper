@@ -25,6 +25,7 @@ import {
   type ClinicalFacts,
 } from '../rules/acuity';
 import { assertModelConfigured, pathwayModel } from './provider';
+import { detectRuleset } from '../rules/registry';
 import { extractFacts, type ExtractedFacts } from '../decisions/extract';
 import { evaluateFork, forkFor, variableFor } from '../decisions/evaluate';
 import { decisionModelSchema, type DecisionModel, type FactValues } from '../decisions/schema';
@@ -337,7 +338,13 @@ export async function traverse(options: TraverseOptions): Promise<Route> {
   // emitting anything means the user watches a blank document for its full
   // duration; corridors with one way out need no facts at all, so the await
   // happens lazily at the first fork that actually depends on it.
-  const hasAcuity = graph.nodes.some((n) => n.acuity !== null);
+  // The C-SSRS ruleset only applies to the pathway it was transcribed from.
+  // Acuity colours travel between institutions; acuity *criteria* do not. See
+  // `rules/registry.ts` — this gate is what stops a BRUE pathway, whose
+  // higher/lower-risk boxes are red and green, from being asked about suicidal
+  // ideation.
+  const hasAcuity =
+    detectRuleset(graph) === 'cssrs' && graph.nodes.some((n) => n.acuity !== null);
 
   const decisions: DecisionModel | null = (() => {
     if (!graph.decisions) return null;

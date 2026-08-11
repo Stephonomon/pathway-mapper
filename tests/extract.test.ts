@@ -7,13 +7,15 @@
  */
 
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { extractDocument, type RawPage } from '@/lib/pdf/extract';
 import { classifyPage } from '@/lib/pdf/primitives';
 import { inferGraph, type CandidateGraph } from '@/lib/pdf/infer';
 
-const SAMPLE = path.join(process.cwd(), 'data', 'suicide-risk-outpatient', 'source.pdf');
+// The committed source document, so `npm test` works on a fresh clone with no
+// ingest step. Paths live in one place: tests/fixtures.ts.
+import { CHOP } from './fixtures';
+const SAMPLE = CHOP;
 
 let page: RawPage;
 let graph: CandidateGraph;

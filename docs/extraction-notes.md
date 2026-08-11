@@ -1,4 +1,50 @@
-# How CHOP pathway PDFs are drawn
+# How clinical pathway PDFs are drawn
+
+## The headline: there is no single convention
+
+Three pathways from three institutions use three incompatible drawing
+vocabularies. A classifier tuned to one finds **zero edges** in the others — and
+fails silently, because the pipeline still produces a graph, just an unusable
+one.
+
+| | CHOP | Johns Hopkins (BRUE) | Upstate (febrile infant) |
+|---|---|---|---|
+| Connectors | thin **filled rects** | 7-point **block-arrow polygons** | **stroked polylines** |
+| Arrow heads | grey filled triangles | (part of the block arrow) | black filled triangles |
+| Node shapes | rectangles | rectangles | rounded rects + **diamonds** |
+| Stroke colour | explicit grey | **null** (PDF default black) | explicit black |
+| Link annotations | 103 | 0 | 0 |
+
+`lib/pdf/primitives.ts` therefore runs shape detectors side by side rather than
+assuming a convention. `tests/crossInstitution.test.ts` pins all three so
+tightening a heuristic for one cannot quietly break the others.
+
+Two general lessons came out of this, both of which cost real debugging time:
+
+1. **`q`/`Q` restore the whole graphics state, not just the transform.** Tracking
+   only the CTM leaves colour stale after every restore. The symptom was
+   impossible ink — arrows filled white on a white page — and the consequence was
+   every connector in the BRUE pathway being discarded as "not ink".
+2. **Colour is a visual convention and does not travel.** Acuity bands were being
+   detected from stroke colour, and BRUE colours its higher/lower-risk boxes red
+   and green. That was enough to engage the C-SSRS ruleset on a febrile-infant
+   pathway and ask the clinician about suicidal ideation. Hand-written rulesets
+   are now scoped by document *content* — see `lib/rules/registry.ts`.
+
+## Onboarding a new pathway
+
+```bash
+npm run diagnose -- path/to/pathway.pdf   # what vocabulary does it use?
+npm run extract  -- path/to/pathway.pdf   # counts + a debug SVG to eyeball
+```
+
+`diagnose` prints the actual drawing vocabulary — stroked vs filled, colours,
+triangle and thin-rect counts, and whether arrowheads might be typographic
+glyphs. Start there when a document extracts badly, rather than guessing.
+
+---
+
+# The CHOP reference document in detail
 
 Findings from reverse-engineering
 `Suicide Risk Assessment and Care Planning Clinical Pathway – Outpatient`. These

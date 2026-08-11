@@ -165,7 +165,19 @@ function extractPaths(
   // annotations — the whole point of having one canonical space.
   const base: Matrix = [1, 0, 0, -1, 0, pageHeight];
   let ctm: Matrix = base;
-  const stack: Matrix[] = [];
+  /**
+   * `q`/`Q` save and restore the *entire* graphics state, not just the transform.
+   * Tracking only the CTM leaves colour stale after every restore, which shows up
+   * as impossible ink — white arrows drawn on a white page. Stack all of it.
+   */
+  interface GraphicsState {
+    ctm: Matrix;
+    fill: [number, number, number] | null;
+    stroke: [number, number, number] | null;
+    lineWidth: number;
+  }
+
+  const stack: GraphicsState[] = [];
   let fill: [number, number, number] | null = null;
   let stroke: [number, number, number] | null = null;
   let lineWidth = 1;
@@ -175,9 +187,13 @@ function extractPaths(
     const args = argsArray[i] as never;
 
     if (fn === OPS.save) {
-      stack.push(ctm);
+      stack.push({ ctm, fill, stroke, lineWidth });
     } else if (fn === OPS.restore) {
-      ctm = stack.pop() ?? base;
+      const restored = stack.pop();
+      ctm = restored?.ctm ?? base;
+      fill = restored?.fill ?? null;
+      stroke = restored?.stroke ?? null;
+      lineWidth = restored?.lineWidth ?? 1;
     } else if (fn === OPS.transform) {
       ctm = multiply(Array.from(args as ArrayLike<number>) as unknown as Matrix, ctm);
     } else if (fn === OPS.setFillRGBColor) {

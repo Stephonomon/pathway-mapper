@@ -77,13 +77,30 @@ reading text, collecting links, and working out branch rules is generic. The
 document actually says, so a diabetes pathway gets diabetes rules without anyone
 writing code.
 
+**Proven across three institutions.** CHOP (suicide risk), Johns Hopkins All
+Children's (BRUE), and Upstate (febrile infant) all extract, compile and route
+with no pathway-specific code — see `tests/crossInstitution.test.ts`. Getting
+there required two fixes worth knowing about, both found only by testing across
+institutions rather than by testing one document harder:
+
+- The three documents draw connectors three incompatible ways (filled rectangles,
+  block-arrow polygons, stroked polylines) and nodes three ways (rectangles,
+  rounded rectangles, decision diamonds). The classifier now runs detectors side
+  by side instead of assuming a convention.
+- Acuity bands were being detected from stroke colour, and BRUE colours its
+  higher/lower-risk boxes red and green — enough to engage the suicide-risk
+  ruleset on a febrile-infant pathway and ask the clinician about suicidal
+  ideation. Hand-written rulesets are now scoped by document content.
+
 **What needs attention per pathway.**
 
-- *Check the extraction.* `npm run extract` writes a picture showing every box
-  and arrow it found; if that lines up with the document, everything downstream
-  is on solid ground. Same-template CHOP pathways should work as-is — the
-  Depression and Behavioral Health ED pathways are the obvious next tests.
-  Documents from a different publisher may need the shape rules retuned.
+- *Check the extraction.* `npm run diagnose` prints the drawing vocabulary a
+  document uses, and `npm run extract` writes a picture showing every box and
+  arrow found. If that lines up with the document, everything downstream is on
+  solid ground. Expect the geometry to find most edges and the labeling pass to
+  fill a few gaps — on the Upstate pathway it recovered three real connectors the
+  geometry missed and flagged two more as needing verification, which is the
+  system working as intended rather than failing.
 - *Decide if any branch deserves hand-written rules.* The automatically compiled
   rules are good, but for a branch where being wrong is genuinely dangerous, do
   what was done for acuity here: transcribe the criteria by hand, write tests for

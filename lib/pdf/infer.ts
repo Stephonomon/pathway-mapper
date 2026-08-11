@@ -160,15 +160,27 @@ function linksForRect(links: LinkAnnotation[], rect: Rect, runs: TextRun[]): Can
   return [...out.entries()].map(([url, text]) => ({ url, text }));
 }
 
-/** Walk the chain of shafts leading away from an arrowhead's base. */
+/** How many segments a single connector may be made of before we give up. */
+const MAX_CHAIN_SEGMENTS = 12;
+
+/**
+ * Walk the chain of shafts leading away from an arrowhead's base, stopping at
+ * the first point that touches a box.
+ *
+ * Stopping early matters. On a page where connectors are stroked polylines there
+ * can be hundreds of segments, and any two that happen to touch will be joined —
+ * so a chain walked to its "end" wanders off across the document. A connector
+ * runs from one box to another, so the first box reached *is* the source.
+ */
 function traceShaftChain(
   start: Point,
   shafts: Shaft[],
+  reachedSource: (p: Point) => boolean,
 ): { polyline: Point[]; end: Point } | null {
   const used = new Set<number>();
 
-  const nearestShaft = (from: Point): { index: number; near: Point; far: Point } | null => {
-    let best: { index: number; near: Point; far: Point } | null = null;
+  const nearestShaft = (from: Point): { index: number; far: Point } | null => {
+    let best: { index: number; far: Point } | null = null;
     let bestDistance = JOIN_TOLERANCE;
     shafts.forEach((shaft, index) => {
       if (used.has(index)) return;
@@ -176,30 +188,30 @@ function traceShaftChain(
       const db = distance(from, shaft.b);
       if (da <= bestDistance) {
         bestDistance = da;
-        best = { index, near: shaft.a, far: shaft.b };
+        best = { index, far: shaft.b };
       }
       if (db <= bestDistance) {
         bestDistance = db;
-        best = { index, near: shaft.b, far: shaft.a };
+        best = { index, far: shaft.a };
       }
     });
     return best;
   };
 
-  const first = nearestShaft(start);
-  if (!first) return null;
-
   const polyline: Point[] = [start];
-  let cursor = first;
-  while (cursor) {
-    used.add(cursor.index);
-    polyline.push(cursor.far);
-    const next = nearestShaft(cursor.far);
+  let cursor = start;
+
+  for (let step = 0; step < MAX_CHAIN_SEGMENTS; step++) {
+    const next = nearestShaft(cursor);
     if (!next) break;
-    cursor = next;
+    used.add(next.index);
+    polyline.push(next.far);
+    cursor = next.far;
+    if (reachedSource(cursor)) break;
   }
 
-  return { polyline, end: polyline[polyline.length - 1] };
+  if (polyline.length < 2) return null;
+  return { polyline, end: cursor };
 }
 
 function boxAt(point: Point, nodes: CandidateNode[], tolerance = ATTACH_TOLERANCE): CandidateNode | null {
@@ -320,7 +332,15 @@ export function inferGraph(page: RawPage, geometry: PageGeometry): CandidateGrap
   const seen = new Set<string>();
   let unresolved = 0;
 
-  geometry.arrowheads.forEach((head: Arrowhead, i) => {
+  // The same arrow is often drawn twice — a filled triangle sitting on top of a
+  // block-arrow polygon — and both detectors fire. Keep one head per tip.
+  const heads: Arrowhead[] = [];
+  for (const head of geometry.arrowheads) {
+    if (heads.some((k) => distance(k.tip, head.tip) < 3)) continue;
+    heads.push(head);
+  }
+
+  heads.forEach((head: Arrowhead, i) => {
     const target = boxAt(head.tip, nodes);
     if (!target) {
       unresolved++;
@@ -331,10 +351,15 @@ export function inferGraph(page: RawPage, geometry: PageGeometry): CandidateGrap
     let polyline: Point[] = [head.base, head.tip];
     let provenance: CandidateEdge['provenance'] = 'ray';
 
-    const chain = traceShaftChain(head.base, geometry.shafts);
+    // Stop the walk at the first box that is not the one we are pointing at.
+    const chain = traceShaftChain(head.base, geometry.shafts, (p) => {
+      const hit = boxAt(p, nodes);
+      return Boolean(hit && hit.id !== target.id);
+    });
     if (chain) {
-      source = boxAt(chain.end, nodes);
-      if (source) {
+      const found = boxAt(chain.end, nodes);
+      if (found && found.id !== target.id) {
+        source = found;
         polyline = [...chain.polyline].reverse().concat([head.tip]);
         provenance = 'shaft';
       }
