@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #16202b;
+  --muted: #5b6a7a;
+  --line: #d9e0e8;
+  --accent: #1f6feb;
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* The route trace draws itself on, the way a directions line does. */
+@keyframes trace-in {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.route-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: trace-in 480ms ease-out forwards;
+}
+
+@keyframes halo-in {
+  from {
+    opacity: 0;
+    stroke-width: 6;
+  }
+  to {
+    opacity: 1;
+    stroke-width: 2;
+  }
+}
+
+.route-halo {
+  animation: halo-in 380ms ease-out forwards;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.route-halo-active {
+  animation: halo-in 380ms ease-out forwards, pulse 2s ease-in-out 380ms infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-trace,
+  .route-halo,
+  .route-halo-active {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}

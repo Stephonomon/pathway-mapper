@@ -1,0 +1,503 @@
+'use client';
+
+/**
+ * The viewer: original document underneath, invisible layer on top, turn-by-turn
+ * panel beside it.
+ *
+ * Route playback follows the shape a navigation app uses:
+ *
+ *   routing   steps stream in and light up on the full page — you watch the
+ *             route get built, without the camera moving
+ *   touring   the camera walks the turns one at a time, zoomed in
+ *   overview  it pulls back to frame the entire path
+ *
+ * Any manual pan/zoom pauses the tour rather than fighting it.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PathwayGraph, Rect, Route, RouteEvent, RouteStep } from '@/lib/schema';
+import { SAMPLE_PROMPTS } from '@/lib/samplePrompts';
+import { OverlayLayer } from './OverlayLayer';
+import { PdfCanvas } from './PdfCanvas';
+import { RoutePanel } from './RoutePanel';
+import { RoutePlayback } from './RoutePlayback';
+import { ViewportControls } from './ViewportControls';
+
+const MIN_ZOOM = 0.3;
+const MAX_ZOOM = 4;
+/** Zoom ceiling while touring — close enough to read, not so close it's lost. */
+const TOUR_ZOOM = 2.6;
+const NODE_PADDING = 52; // page units of breathing room around a focused node
+const ROUTE_PADDING = 26;
+
+/** How long the camera rests on each turn. */
+const DWELL_MS = 2200;
+const TOUR_EASE_MS = 850;
+const OVERVIEW_EASE_MS = 1100;
+const MANUAL_EASE_MS = 220;
+
+type Phase = 'idle' | 'routing' | 'touring' | 'overview';
+
+interface Viewport {
+  tx: number;
+  ty: number;
+  z: number;
+}
+
+interface PathwayViewerProps {
+  graph: PathwayGraph;
+}
+
+function unionRects(rects: Rect[]): Rect | null {
+  if (rects.length === 0) return null;
+  const x = Math.min(...rects.map((r) => r.x));
+  const y = Math.min(...rects.map((r) => r.y));
+  return {
+    x,
+    y,
+    w: Math.max(...rects.map((r) => r.x + r.w)) - x,
+    h: Math.max(...rects.map((r) => r.y + r.h)) - y,
+  };
+}
+
+export function PathwayViewer({ graph }: PathwayViewerProps) {
+  const page = graph.pages[0];
+  const stageRef = useRef<HTMLDivElement>(null);
+
+  const [question, setQuestion] = useState('');
+  const [pending, setPending] = useState(false);
+  const [steps, setSteps] = useState<RouteStep[]>([]);
+  const [route, setRoute] = useState<Route | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [answers, setAnswers] = useState<{ question: string; answer: string }[]>([]);
+  const [clarify, setClarify] = useState<{ text: string; options: string[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [playing, setPlaying] = useState(false);
+  const [fit, setFit] = useState(0);
+  const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, z: 1 });
+  const [easeMs, setEaseMs] = useState(TOUR_EASE_MS);
+
+  const routeNodeIds = useMemo(() => steps.map((s) => s.nodeId), [steps]);
+  const routeEdgeIds = useMemo(() => steps.slice(1).map((s) => s.edgeIdFromPrev ?? ''), [steps]);
+
+  const routeBounds = useMemo(() => {
+    const boxes = routeNodeIds
+      .map((id) => graph.nodes.find((n) => n.id === id)?.bbox)
+      .filter((b): b is Rect => Boolean(b));
+    return unionRects(boxes);
+  }, [routeNodeIds, graph.nodes]);
+
+  // Fit the page to the stage width, and keep it fitted on resize.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !page) return;
+    const observer = new ResizeObserver(() => setFit(stage.clientWidth / page.width));
+    observer.observe(stage);
+    setFit(stage.clientWidth / page.width);
+    return () => observer.disconnect();
+  }, [page]);
+
+  /** Keep the page overlapping the stage no matter how far the user pans. */
+  const clamp = useCallback(
+    (v: Viewport): Viewport => {
+      const stage = stageRef.current;
+      if (!stage || !page || fit === 0) return v;
+      const axis = (t: number, size: number, extent: number) =>
+        extent <= size ? (size - extent) / 2 : Math.min(0, Math.max(size - extent, t));
+      return {
+        z: v.z,
+        tx: axis(v.tx, stage.clientWidth, page.width * fit * v.z),
+        ty: axis(v.ty, stage.clientHeight, page.height * fit * v.z),
+      };
+    },
+    [fit, page],
+  );
+
+  /** Centre an area of the page, zoomed to fill the stage up to `maxZoom`. */
+  const focusRect = useCallback(
+    (rect: Rect, opts: { padding: number; maxZoom: number; ease: number }) => {
+      const stage = stageRef.current;
+      if (!stage || !page || fit === 0) return;
+
+      const vw = stage.clientWidth;
+      const vh = stage.clientHeight;
+      const boxW = (rect.w + opts.padding * 2) * fit;
+      const boxH = (rect.h + opts.padding * 2) * fit;
+      const z = Math.max(MIN_ZOOM, Math.min(opts.maxZoom, Math.min(vw / boxW, vh / boxH)));
+      const cx = (rect.x + rect.w / 2) * fit;
+      const cy = (rect.y + rect.h / 2) * fit;
+
+      setEaseMs(opts.ease);
+      setViewport(clamp({ tx: vw / 2 - cx * z, ty: vh / 2 - cy * z, z }));
+    },
+    [clamp, fit, page],
+  );
+
+  const fitPage = useCallback(() => {
+    if (!page) return;
+    focusRect({ x: 0, y: 0, w: page.width, h: page.height }, { padding: 4, maxZoom: 1, ease: OVERVIEW_EASE_MS });
+  }, [focusRect, page]);
+
+  const fitRoute = useCallback(() => {
+    if (!routeBounds) return fitPage();
+    focusRect(routeBounds, { padding: ROUTE_PADDING, maxZoom: 1.6, ease: OVERVIEW_EASE_MS });
+  }, [focusRect, fitPage, routeBounds]);
+
+  const focusNode = useCallback(
+    (nodeId: string, ease = TOUR_EASE_MS) => {
+      const node = graph.nodes.find((n) => n.id === nodeId);
+      if (node) focusRect(node.bbox, { padding: NODE_PADDING, maxZoom: TOUR_ZOOM, ease });
+    },
+    [focusRect, graph.nodes],
+  );
+
+  /** Manual controls pause the tour — the user is driving now. */
+  const takeManualControl = useCallback(() => {
+    setPlaying(false);
+    setPhase((p) => (p === 'routing' ? p : 'idle'));
+  }, []);
+
+  const pan = useCallback(
+    (dx: number, dy: number) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      takeManualControl();
+      setEaseMs(MANUAL_EASE_MS);
+      setViewport((v) =>
+        clamp({ ...v, tx: v.tx - dx * stage.clientWidth, ty: v.ty - dy * stage.clientHeight }),
+      );
+    },
+    [clamp, takeManualControl],
+  );
+
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      takeManualControl();
+      setEaseMs(MANUAL_EASE_MS);
+      setViewport((v) => {
+        const z = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v.z * factor));
+        const scale = z / v.z;
+        // Zoom about the centre of the stage so the focus point stays put.
+        const cx = stage.clientWidth / 2;
+        const cy = stage.clientHeight / 2;
+        return clamp({ z, tx: cx - (cx - v.tx) * scale, ty: cy - (cy - v.ty) * scale });
+      });
+    },
+    [clamp, takeManualControl],
+  );
+
+  // Frame the whole page once we know the stage size.
+  useEffect(() => {
+    if (fit > 0 && phase === 'idle' && steps.length === 0) fitPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fit]);
+
+  // The tour: rest on each turn, then advance; pull back to overview at the end.
+  useEffect(() => {
+    if (phase !== 'touring' || !playing) return;
+
+    if (activeIndex >= steps.length - 1) {
+      const timer = setTimeout(() => {
+        setPhase('overview');
+        setPlaying(false);
+      }, DWELL_MS);
+      return () => clearTimeout(timer);
+    }
+
+    const timer = setTimeout(() => setActiveIndex((i) => i + 1), DWELL_MS);
+    return () => clearTimeout(timer);
+  }, [phase, playing, activeIndex, steps.length]);
+
+  // Camera follows the active turn, but only while touring — otherwise a manual
+  // pan would be snatched back the moment this effect re-ran.
+  useEffect(() => {
+    if (phase !== 'touring') return;
+    const nodeId = routeNodeIds[activeIndex];
+    if (nodeId) focusNode(nodeId);
+  }, [activeIndex, phase, routeNodeIds, focusNode]);
+
+  useEffect(() => {
+    if (phase === 'overview') fitRoute();
+  }, [phase, fitRoute]);
+
+  const selectStep = useCallback(
+    (index: number) => {
+      setPlaying(false);
+      setPhase('touring');
+      setActiveIndex(index);
+    },
+    [],
+  );
+
+  const startTour = useCallback(() => {
+    if (steps.length === 0) return;
+    setPhase('touring');
+    setActiveIndex(0);
+    setPlaying(true);
+  }, [steps.length]);
+
+  const ask = useCallback(
+    async (text: string, currentAnswers: { question: string; answer: string }[]) => {
+      setPending(true);
+      setError(null);
+      setClarify(null);
+      setSteps([]);
+      setRoute(null);
+      setActiveIndex(0);
+      setPlaying(false);
+      setPhase('routing');
+      fitPage();
+
+      try {
+        const response = await fetch('/api/route', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ docId: graph.docId, question: text, answers: currentAnswers }),
+        });
+        if (!response.ok || !response.body) {
+          throw new Error((await response.json().catch(() => null))?.error ?? 'routing failed');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let arrived = 0;
+
+        // Newline-delimited JSON: each hop lands as the server decides it.
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let newline = buffer.indexOf('\n');
+          while (newline >= 0) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+            newline = buffer.indexOf('\n');
+            if (!line) continue;
+
+            const event = JSON.parse(line) as RouteEvent;
+            if (event.type === 'step') {
+              arrived += 1;
+              setSteps((prev) => [...prev, event.step]);
+              setActiveIndex(arrived - 1);
+            } else if (event.type === 'question') {
+              setClarify(event.question);
+            } else if (event.type === 'done') {
+              setRoute(event.route);
+            } else if (event.type === 'error') {
+              setError(event.message);
+            }
+          }
+        }
+
+        // Route found — now walk the user through it.
+        if (arrived > 1) {
+          setPhase('touring');
+          setActiveIndex(0);
+          setPlaying(true);
+        } else {
+          setPhase('overview');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setPhase('idle');
+      } finally {
+        setPending(false);
+      }
+    },
+    [graph.docId, fitPage],
+  );
+
+  const submitAnswer = useCallback(
+    (answer: string) => {
+      if (!clarify) return;
+      const next = [...answers, { question: clarify.text, answer }];
+      setAnswers(next);
+      void ask(question, next);
+    },
+    [answers, ask, clarify, question],
+  );
+
+  if (!page) return <p className="p-6">This document has no pages.</p>;
+
+  return (
+    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <section className="space-y-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setAnswers([]);
+            void ask(question, []);
+          }}
+          className="flex gap-2"
+        >
+          <input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Describe the patient and the question, e.g. “14yo told her counselor she wishes she were dead last week; no plan, no prior attempts”"
+            className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          />
+          <button
+            type="submit"
+            disabled={pending || question.trim().length === 0}
+            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+          >
+            {pending ? 'Routing…' : 'Route'}
+          </button>
+        </form>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-[var(--muted)]">Try:</span>
+          {SAMPLE_PROMPTS.map((sample) => (
+            <button
+              key={sample.label}
+              type="button"
+              title={`${sample.hint}\n\n${sample.text}`}
+              disabled={pending}
+              onClick={() => {
+                setQuestion(sample.text);
+                setAnswers([]);
+                void ask(sample.text, []);
+              }}
+              className="rounded-full border border-[var(--line)] bg-white px-2.5 py-1 text-[11px] text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
+            >
+              {sample.label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          ref={stageRef}
+          className="relative h-[74vh] overflow-hidden rounded-lg border border-[var(--line)] bg-white"
+        >
+          <div
+            className="absolute left-0 top-0 origin-top-left"
+            style={{
+              transform: `translate(${viewport.tx}px, ${viewport.ty}px) scale(${viewport.z})`,
+              transition: `transform ${easeMs}ms cubic-bezier(0.33, 1, 0.68, 1)`,
+              width: page.width * fit,
+              height: page.height * fit,
+            }}
+          >
+            <PdfCanvas
+              src={`/api/source/${graph.docId}`}
+              pageNumber={page.number}
+              width={page.width * fit}
+              height={page.height * fit}
+              onError={setError}
+            />
+            <OverlayLayer
+              graph={graph}
+              pageNumber={page.number}
+              routeNodeIds={routeNodeIds}
+              routeEdgeIds={routeEdgeIds}
+              activeIndex={activeIndex}
+              onSelectNode={(id) => {
+                const index = routeNodeIds.indexOf(id);
+                if (index >= 0) selectStep(index);
+                else {
+                  takeManualControl();
+                  focusNode(id, MANUAL_EASE_MS);
+                }
+              }}
+            />
+          </div>
+
+          <RoutePlayback
+            stepCount={steps.length}
+            activeIndex={activeIndex}
+            playing={playing}
+            phase={phase}
+            onPlayPause={() => {
+              if (phase !== 'touring') setPhase('touring');
+              setPlaying((p) => !p);
+            }}
+            onPrev={() => selectStep(Math.max(0, activeIndex - 1))}
+            onNext={() => selectStep(Math.min(steps.length - 1, activeIndex + 1))}
+            onReplay={startTour}
+          />
+
+          <ViewportControls
+            onPan={pan}
+            onZoom={zoomBy}
+            onFitPage={() => {
+              takeManualControl();
+              fitPage();
+            }}
+            onFitRoute={() => {
+              setPlaying(false);
+              setPhase('overview');
+              // Also apply directly: if we are already in 'overview' the effect
+              // below would not re-fire, and the button would silently do nothing.
+              fitRoute();
+            }}
+            hasRoute={steps.length > 0}
+            zoom={viewport.z}
+          />
+        </div>
+      </section>
+
+      <aside className="space-y-3">
+        {error && (
+          <p className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">{error}</p>
+        )}
+
+        {clarify && (
+          <div className="rounded-lg border border-[var(--accent)] bg-white p-3">
+            <p className="text-sm font-medium">{clarify.text}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {clarify.options.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => submitAnswer(option)}
+                  className="rounded border border-[var(--line)] px-2 py-1 text-xs hover:bg-slate-50"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-[var(--muted)]">
+              The pathway needs this before it can place the patient. Answering resumes the route.
+            </p>
+          </div>
+        )}
+
+        <RoutePanel
+          graph={graph}
+          steps={steps}
+          activeIndex={activeIndex}
+          route={route}
+          onSelect={selectStep}
+        />
+
+        <SafetyFooter />
+      </aside>
+    </div>
+  );
+}
+
+function SafetyFooter() {
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--line)] bg-white p-3 text-[11px] leading-snug text-[var(--muted)]">
+      <p>
+        <strong className="text-[var(--ink)]">Decision support, not triage.</strong> This tool
+        navigates an approved clinical pathway document. It does not provide medical advice and does
+        not replace clinical judgement. Verify every step against the document itself.
+      </p>
+      <p>
+        Questions are not stored. Only the pathway version and the node sequence are recorded for
+        audit.
+      </p>
+      <p className="text-[var(--ink)]">
+        Crisis resources: <strong>988</strong> Suicide &amp; Crisis Lifeline · Crisis Text Line: text{' '}
+        <strong>HOME</strong> to <strong>741741</strong>
+      </p>
+    </div>
+  );
+}

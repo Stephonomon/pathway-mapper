@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+
+# Ingested pathway documents and their extracted graphs.
+data/*
+!data/.gitkeep
