@@ -3,7 +3,7 @@
  *
  * Runs once per document, not once per query. The output is validated hard
  * before it is stored: a rule may only reference edges that leave its own fork,
- * variables that were actually declared, and values those variables can take.
+ * data items that were actually declared, and values those items can take.
  * Anything else is dropped with a warning rather than trusted — a compiled rule
  * routes patients without a model in the loop, so it has to be structurally
  * incapable of pointing somewhere that does not exist.
@@ -20,15 +20,17 @@ You are given the pathway's nodes (with their text exactly as printed) and every
 
 Produce two things:
 
-1. VARIABLES: the small set of patient facts this document actually branches on. Each needs a snake_case key, a description written for whoever extracts it from a clinical narrative, a question to ask the clinician when it is missing, and a closed list of short lowercase option tokens with human-readable labels. Prefer few, reusable variables over many narrow ones. Never include "unknown" in the options — it is added automatically.
+1. DATA ITEMS: the small set of patient facts this document actually branches on. Each needs a snake_case key, a description written for whoever extracts it from a clinical narrative, a question to ask the clinician when it is missing, and a closed list of short lowercase option tokens with human-readable labels. Prefer few, reusable data items over many narrow ones. Never include "unknown" in the options — it is added automatically.
 
-2. FORKS: for each fork, rules mapping facts to one outgoing edge. A rule is a conjunction: every clause must hold for it to fire. To express "A or B selects this edge", write two rules for the same edge.
+2. FORKS: for each fork, criteria for proceeding — rules mapping facts to one outgoing edge. A rule is a conjunction: every clause must hold for it to fire. To express "A or B selects this edge", write two rules for the same edge.
+
+3. EXAMPLES: four to six realistic starter cases a clinician might type, spanning this pathway's distinct outcomes — including at least one that is deliberately underspecified so the router has to ask. Write them in the register a clinician actually uses. These are shown as one-click chips in the question box, so they must be about THIS pathway's subject matter and nothing else.
 
 Rules you must follow:
 - Only write a rule when the document states the criteria. Do not encode clinical knowledge the document does not print.
 - If a fork is a clinician judgement call that the document does not determine — no printed criteria, the choice depends on an assessment the narrative cannot contain — set judgementCall: true, give it no rules, and fill in judgementQuestion plus one judgementOption per outgoing edge. This is a correct and expected answer. It is much better than inventing criteria. Write the question the way a colleague would ask it, and phrase each option as the clinical action that branch represents.
 - Every rule's edgeId must be one of the edges listed for that fork.
-- Every clause's variable must be one you declared, and its values must come from that variable's options.
+- Every clause's data item must be one you declared, and its values must come from that item's options.
 - Make the rules exhaustive and mutually exclusive where the document allows it. Two rules selecting different edges must never be able to fire at once.
 - Where the document orders branches by severity, encode the most severe branch so it wins on its own criteria alone, without needing the milder branches ruled out.`;
 
@@ -75,20 +77,20 @@ function validate(graph: PathwayGraph, model: DecisionModel): CompileResult {
   const warnings: string[] = [];
   const nodes = new Map(graph.nodes.map((n) => [n.id, n]));
 
-  const variables = model.variables.filter((v) => {
+  const dataItems = model.dataItems.filter((v) => {
     if (v.options.length === 0) {
-      warnings.push(`decision variable "${v.key}" has no options; dropped`);
+      warnings.push(`data item "${v.key}" has no options; dropped`);
       return false;
     }
     return true;
   });
   // Keep labels aligned with options even if the model returned a short list.
-  for (const v of variables) {
+  for (const v of dataItems) {
     if (v.optionLabels.length !== v.options.length) {
       v.optionLabels = v.options.map((o, i) => v.optionLabels[i] ?? o);
     }
   }
-  const byKey = new Map(variables.map((v) => [v.key, v]));
+  const byKey = new Map(dataItems.map((v) => [v.key, v]));
 
   const forks = model.forks.flatMap((fork) => {
     const node = nodes.get(fork.nodeId);
@@ -113,7 +115,7 @@ function validate(graph: PathwayGraph, model: DecisionModel): CompileResult {
         const variable = byKey.get(clause.variable);
         if (!variable) {
           warnings.push(
-            `compiled rule at ${fork.nodeId} uses undeclared variable "${clause.variable}"; dropped`,
+            `compiled rule at ${fork.nodeId} uses undeclared data item "${clause.variable}"; dropped`,
           );
           return false;
         }
@@ -153,7 +155,7 @@ function validate(graph: PathwayGraph, model: DecisionModel): CompileResult {
     return [{ ...fork, rules, judgementCall, judgementOptions }];
   });
 
-  return { model: { variables, forks }, warnings };
+  return { model: { dataItems, forks, examples: model.examples ?? [] }, warnings };
 }
 
 export async function compileDecisionModel(graph: PathwayGraph): Promise<CompileResult> {

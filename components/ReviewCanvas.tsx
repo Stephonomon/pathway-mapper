@@ -185,7 +185,7 @@ export function ReviewCanvas({ graph: initial }: { graph: PathwayGraph }) {
                 checked={selected.routable}
                 onChange={(e) => updateNode(selected.id, { routable: e.target.checked })}
               />
-              <span>Routable — a clinician can land here</span>
+              <span>Routable — a clinician can land on this step</span>
             </label>
 
             <label className="flex items-center gap-2">
@@ -213,7 +213,7 @@ export function ReviewCanvas({ graph: initial }: { graph: PathwayGraph }) {
 
             {incident.length > 0 && (
               <div className="space-y-1">
-                <span className="text-[var(--muted)]">Edges</span>
+                <span className="text-[var(--muted)]">Edges and criteria for proceeding</span>
                 {incident.map((edge) => (
                   <div key={edge.id} className="rounded border border-[var(--line)] p-1.5">
                     <p className="font-medium">
@@ -228,7 +228,7 @@ export function ReviewCanvas({ graph: initial }: { graph: PathwayGraph }) {
                     />
                     <input
                       value={edge.condition ?? ''}
-                      placeholder="condition"
+                      placeholder="criteria for proceeding"
                       onChange={(e) => updateEdge(edge.id, { condition: e.target.value || null })}
                       className="mt-1 w-full rounded border border-[var(--line)] px-1.5 py-0.5"
                     />

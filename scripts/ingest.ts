@@ -63,7 +63,7 @@ async function main() {
       graph.warnings.push(...warnings);
       const judgement = model.forks.filter((f) => f.judgementCall).length;
       console.log(
-        `compiled ${model.variables.length} decision variables, ${model.forks.length} forks (${judgement} left to clinical judgement)`,
+        `compiled ${model.dataItems.length} data items, ${model.forks.length} forks (${judgement} left to clinical judgement)`,
       );
     } catch (err) {
       console.warn(`decision compilation failed (${(err as Error).message}); routing will ask the model at every fork`);

@@ -92,7 +92,7 @@ export const pathwayPageSchema = z.object({
  */
 export const storedDecisionModelSchema = z
   .object({
-    variables: z.array(z.record(z.string(), z.unknown())),
+    dataItems: z.array(z.record(z.string(), z.unknown())),
     forks: z.array(z.record(z.string(), z.unknown())),
   })
   .passthrough();

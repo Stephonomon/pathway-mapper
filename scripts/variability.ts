@@ -71,7 +71,7 @@ async function main() {
     graphs.push(graph);
     process.stdout.write(
       `  run ${i + 1}: entry=${graph.entryNodeIds.join(',')} ` +
-        `vars=${compiled.model.variables.length} ` +
+        `vars=${compiled.model.dataItems.length} ` +
         `forks=${compiled.model.forks.length} ` +
         `judgement=${compiled.model.forks.filter((f) => f.judgementCall).length}\n`,
     );
@@ -106,7 +106,7 @@ async function main() {
   );
 
   const models = graphs.map((g) => decisionModelSchema.parse(g.decisions));
-  const varNames = models.map((m) => m.variables.map((v) => v.key).sort().join(','));
+  const varNames = models.map((m) => m.dataItems.map((v) => v.key).sort().join(','));
   console.log(
     `  decision variable names   ${varNames.every((v) => v === varNames[0]) ? 'IDENTICAL' : 'VARIES'}`,
   );

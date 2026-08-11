@@ -1,125 +1,219 @@
 # Pathway Mapper
 
-Ask a question in plain language; get turn-by-turn directions through a clinical
-pathway, drawn on the pathway document itself.
+**Ask a clinical question in plain language. Get turn-by-turn directions through
+a clinical pathway, drawn on the pathway document itself.**
 
-The Google Maps analogy is load-bearing. You don't get a destination — you get
-the route: each decision node lit in order, each arrow traced, and a panel
-telling you why the pathway sent you down that branch. Everything off-route dims.
-The document underneath is the original, unmodified PDF.
+Not a summary of the pathway. Not a chatbot that has read it. The route: each
+decision node lit in order, each arrow traced, everything off-route dimmed, and a
+panel showing the document's own words for every step. The page underneath is the
+original approved PDF.
 
-## How it works, in plain terms
+---
 
-There are two separate phases: **preparing a pathway**, which happens once per
-document, and **asking a question**, which happens every time someone uses it.
+## The problem
 
-### Preparing a pathway (once, per PDF)
+Every children's hospital publishes clinical pathways as flowchart PDFs. They
+represent enormous committee effort and they are genuinely good. They are also
+hard to use at the moment of care: you have to find the right one, then trace the
+right line through it, holding a specific patient in your head.
 
-1. **Read the drawing, not the picture.** A pathway PDF isn't a photo of a
-   flowchart — it's a set of instructions for drawing one. The tool reads those
-   instructions directly, so it knows exactly where every box sits, which arrows
-   connect which boxes, and which way each arrow points. This is ordinary
-   measurement, not interpretation: there is no guesswork and no AI involved.
-2. **Read what the boxes say.** The text inside each box is pulled out word for
-   word, along with the links the document already contains (this pathway has 103
-   of them, pointing to definitions, scales, and case examples).
-3. **Work out what each decision depends on.** AI reads the assembled flowchart
-   once and writes down, in plain rules, what has to be true of a patient to go
-   down each branch — "screen was positive", "an attempt within the last three
-   months". Where the document *doesn't* say (some choices are left to the
-   clinician), it records that too, rather than inventing a rule.
-4. **A human checks it and signs off.** A reviewer opens the document with the
-   tool's reading overlaid on top, corrects anything wrong, and puts their name
-   on it. Nobody gets routed through a pathway that hasn't been signed off.
+The standard response is to rebuild the pathway inside the EHR as order sets and
+alerts. That works, and it costs a build cycle per pathway, so most pathways never
+get one. The published PDF stays the only artifact, and it stays static.
 
-The output is a small, readable file sitting next to the PDF. That's the whole
-preparation — and it's why answering a question later is fast.
+## What this does differently
 
-### Asking a question (every time)
+It reads the PDF the way a person reads a flowchart — boxes, arrows, and the words
+inside them — and turns the published document itself into the interface.
 
-1. Someone types a case in ordinary language: *"16yo said this week he's been
-   thinking about taking his mother's pills and intends to do it. No prior
-   attempts."*
-2. The tool turns that into a short checklist of facts — what kind of thoughts,
-   how recently, any prior attempts — and marks anything the description doesn't
-   say as **unknown**.
-3. It then walks the flowchart one step at a time, like turn-by-turn directions.
-   At each step it can only take a turn that is actually drawn on the page.
-4. When the rules settle a step, it takes it. When a fact is missing, **it stops
-   and asks** rather than guessing. When the document itself leaves a choice to
-   the clinician, it asks that too — and says so.
-5. The route is drawn on the original PDF: each box lights up in order, the
-   arrows between them trace out, everything else dims, and a side panel shows
-   the document's own words for each step plus why that turn was taken.
+A clinician types *"5-week-old, brief apnoeic episode, first event, no CPR, well
+appearing"* and the tool walks the pathway one decision at a time, lighting each
+step on the page. Where the document determines the answer, it takes the step.
+Where it doesn't, it stops and asks.
 
-### The four things that make it trustworthy
+**Nothing is rebuilt, and nothing is replaced.** The approved document remains the
+source of truth and the audit surface, which is exactly the property that makes
+this defensible to a governance committee.
 
-- **It can't invent a step.** It can only follow arrows that exist on the page.
-- **It shows the document's words**, not a summary. The AI's own wording appears
-  only in the "why this turn" note, kept visually separate.
-- **It asks instead of guessing.** Stopping to ask is treated as a correct
-  outcome, not a failure.
-- **The dangerous decision isn't left to AI.** On this pathway, the low /
-  intermediate / high acuity banding is written out as a plain rule table copied
-  from the document and tested case by case. AI only reads the facts; the table
-  decides the band, and overrules the rest of the system if they disagree.
+## Why it holds up
 
-## Adding another pathway
+Four properties, in the order a reviewer usually asks about them:
 
-Point it at a new PDF and it does steps 1–3 above on its own — a couple of
-minutes and a few cents of AI usage per document. A person then spends perhaps
-fifteen minutes on step 4, checking the reading and signing off. There is no
-per-pathway programming.
+**It cannot invent a step.** Routing may only follow arrows that were measured off
+the page. The server validates every hop against real adjacency, so a route is by
+construction a sequence of turns the document draws.
 
-**What carries over automatically.** Everything about finding boxes and arrows,
-reading text, collecting links, and working out branch rules is generic. The
-"what does this fork depend on" step writes fresh rules for whatever the new
-document actually says, so a diabetes pathway gets diabetes rules without anyone
-writing code.
+**It shows the document's words.** Node text is verbatim. Model-written prose
+appears only in the "why this turn" note, kept visually separate.
 
-**Proven across three institutions.** CHOP (suicide risk), Johns Hopkins All
-Children's (BRUE), and Upstate (febrile infant) all extract, compile and route
-with no pathway-specific code — see `tests/crossInstitution.test.ts`. Getting
-there required two fixes worth knowing about, both found only by testing across
-institutions rather than by testing one document harder:
+**It asks instead of guessing.** When a fact needed for a branch is missing, the
+tool stops and requests exactly that fact. Stopping to ask is a success state, not
+a failure.
 
-- The three documents draw connectors three incompatible ways (filled rectangles,
-  block-arrow polygons, stroked polylines) and nodes three ways (rectangles,
-  rounded rectangles, decision diamonds). The classifier now runs detectors side
-  by side instead of assuming a convention.
-- Acuity bands were being detected from stroke colour, and BRUE colours its
-  higher/lower-risk boxes red and green — enough to engage the suicide-risk
-  ruleset on a febrile-infant pathway and ask the clinician about suicidal
-  ideation. Hand-written rulesets are now scoped by document content.
+**The dangerous decisions aren't left to a model.** Where a branch is
+safety-critical, the criteria are transcribed by hand into a rule table, tested
+case by case, and given authority to overrule everything else. On the CHOP suicide
+risk pathway, the C-SSRS acuity bands work this way — a model reads the facts, the
+table decides the band.
 
-**What needs attention per pathway.**
+And a human signs off on the reading before anyone routes through it.
 
-- *Check the extraction.* `npm run diagnose` prints the drawing vocabulary a
-  document uses, and `npm run extract` writes a picture showing every box and
-  arrow found. If that lines up with the document, everything downstream is on
-  solid ground. Expect the geometry to find most edges and the labeling pass to
-  fill a few gaps — on the Upstate pathway it recovered three real connectors the
-  geometry missed and flagged two more as needing verification, which is the
-  system working as intended rather than failing.
-- *Decide if any branch deserves hand-written rules.* The automatically compiled
-  rules are good, but for a branch where being wrong is genuinely dangerous, do
-  what was done for acuity here: transcribe the criteria by hand, write tests for
-  them, and let them overrule everything else. That's a deliberate, reviewable
-  half-day per critical branch — not a limitation so much as the appropriate
-  amount of care.
-- *Keep the human sign-off.* It's the step that makes this defensible, and it
-  shouldn't be optimised away.
+## It already works across institutions
 
-**What doesn't work yet.** Scanned or photographed pathways (the tool needs a
-real vector PDF), and pathways that hand off to each other — this document links
-out to the Depression and Behavioral Health ED pathways, and following those
-links across documents isn't built.
+Three pathways, three hospitals, three completely different ways of drawing a
+flowchart — and **no pathway-specific code**:
 
-**Scaling to a hundred pathways** is mostly a matter of running preparation over
-them and queueing the reviews. Nothing in the query path grows with the size of
-the library: each question touches exactly one pathway, and answering it costs a
-pair of small, fast AI calls plus table lookups — about a second and a half,
-whether there are three pathways or three hundred.
+| Pathway | Institution | What made it different |
+|---|---|---|
+| Suicide risk assessment | CHOP | Connectors are filled rectangles; grey arrowheads |
+| Brief Resolved Unexplained Event | Johns Hopkins All Children's | Connectors are single block-arrow polygons |
+| Febrile infant | Upstate | Stroked polylines; decision diamonds and rounded boxes |
+
+Getting there required generalising the reader, not writing three readers — and
+the two bugs that mattered were only visible *because* there were three documents.
+One was a graphics-state bug that made arrows invisible. The other was a safety
+leak: acuity was being inferred from box colour, and BRUE colours its
+higher/lower-risk boxes red and green, which was enough to make a febrile-infant
+pathway ask a clinician about suicidal ideation. Colour is a visual convention and
+does not travel between institutions. Hand-written rules are now scoped by what a
+document actually says.
+
+Adding a fourth pathway is a couple of minutes of automated preparation and about
+fifteen minutes of human review. There is no programming step.
+
+## Where this sits in the literature
+
+Informaticists will recognise the shape of this. It is close to a subset of
+**GLIF** — the GuideLine Interchange Format (Ohno-Machado et al., *JAMIA* 1998)
+and its execution engine GLEE (Wang et al., *JBI* 2004) — and the vocabulary here
+follows theirs deliberately: *data items*, *criteria for proceeding*, *execution
+trace*, and GLEE's **"system suggests, user controls"** posture.
+
+The difference is where the work goes. GLIF's seven-stage lifecycle assumes a human
+expert encodes the guideline at stage 2; GLEE serves stages 6–7. **That encoding
+step is the bottleneck that kept computable guidelines from scaling** — GLIF,
+Arden, PROforma, Asbru, EON and SAGE all specified well and were expensive to
+populate. This attacks stage 2: derive the representation from the published
+artifact and make the human a reviewer rather than an author. What changed since
+2004 isn't the model — it's the cost of filling it in.
+
+GLIF also required institutions to adopt a shared format upstream. This reads what
+they already publish, which is why three hospitals worked without anyone agreeing
+on anything.
+
+**GLIF's 1998 finding, reproduced.** That paper's central result was that two
+independent encoders of the same guideline produced substantially different
+representations. `npm run variability` measures the same thing here. It reproduces
+— but localised: everything anchored to the document is stable (topology, entry
+point, node roles, printed labels), and the divergence is confined to data-item
+naming and rule decomposition, the two sources the 1998 paper named specifically.
+Behaviourally, encodings largely agree. That is the argument for *measuring* a
+guideline rather than encoding it: it doesn't eliminate encoder variability, it
+relocates it somewhere a behavioural test can police.
+
+Three of the four limitations GLIF named in 1998 show up here too. Temporal
+representation and uncertainty in patient data are handled (timing is baked into
+data-item values; "unknown" is a first-class answer that triggers a question).
+Controlled vocabulary binding is not — data items are ad-hoc keys with no
+SNOMED/LOINC codes, which would matter a great deal if this ever pulled facts from
+a chart.
+
+## Scope, honestly
+
+This does **not** touch patient data. No EHR integration, no PHI, nothing at rest.
+A clinician types what they know; questions aren't stored. That is a deliberate
+scope choice, and it makes this a clinical *reference* tool rather than a
+regulated decision support system.
+
+Also not built: scanned or photographed pathways (it needs a real vector PDF), and
+handoffs between pathways — the CHOP document links out to two others, and
+following those links is the most obvious next step.
+
+## Where it could go
+
+Clinical pathways are published documents. A tool that navigates them without
+touching patient data has no particular reason to stay inside one hospital — the
+Johns Hopkins and Upstate pathways above were read with code written for CHOP's.
+A shared, searchable layer over the pathways institutions already publish is a
+realistic target, and the marginal cost per pathway is minutes rather than a build
+cycle.
+
+---
+
+## Quick start
+
+```bash
+npm install
+```
+
+```bash
+cp .env.example .env   # then add ANTHROPIC_API_KEY
+```
+
+Ingest a pathway (extraction, labeling, and decision-table compilation):
+
+```bash
+npm run ingest -- "Resources/Sample.BRUE-Clinical-Pathway-graph.pdf" --doc-id brue
+```
+
+No API key yet? Extraction alone still gives you a usable document:
+
+```bash
+npm run ingest -- path/to/pathway.pdf --no-label
+```
+
+Then:
+
+```bash
+npm run dev
+```
+
+- `/` — pathway library and upload
+- `/p/<docId>` — viewer: ask a question, watch the route draw
+- `/review/<docId>` — inspect and correct the reading, then sign off
+
+## Using the viewer
+
+Route playback follows the shape a navigation app uses:
+
+| Phase | What the camera does |
+|---|---|
+| `routing` | Holds the whole page while turns stream in and light up |
+| `touring` | Walks the turns one at a time, zoomed in, ~2.2s each |
+| `overview` | Pulls back to frame the entire path |
+
+Transport controls sit top-left of the document (prev / play-pause / next, then
+**Replay**). Framing controls sit bottom-right: a pan pad whose centre button fits
+the page, zoom with a live percentage, and a **frame the route** button. Any manual
+pan or zoom pauses the tour rather than fighting it. Clicking any box jumps to it.
+
+Starter cases under the question box are generated per pathway during ingest, so
+they always match the document you are looking at.
+
+## Onboarding a new pathway
+
+```bash
+npm run diagnose -- path/to/pathway.pdf   # what drawing vocabulary does it use?
+npm run extract  -- path/to/pathway.pdf   # counts plus a debug SVG to eyeball
+```
+
+`diagnose` prints how the document is actually drawn — stroked versus filled,
+colours, triangle and thin-rect counts. Start there when a document reads badly,
+rather than guessing. `extract` writes a picture of every box and arrow found; if
+that lines up with the page, everything downstream is on solid ground.
+
+Expect geometry to find most edges and the labeling pass to fill a few gaps. On
+the Upstate pathway it recovered three real connectors the geometry missed and
+flagged two more as needing verification — that is the system working, not failing.
+
+For a branch where being wrong is genuinely dangerous, do what was done for
+acuity: transcribe the criteria by hand, write tests, and let them overrule
+everything else. That is a deliberate half-day per critical branch.
+
+
+---
+
+# Architecture and implementation
 
 ## Why it's built this way
 
@@ -240,75 +334,6 @@ question ─▶ traverse ─▶ Route{steps} ─▶ overlay: spotlight, trace, p
             one legal hop at a time
 ```
 
-## Quick start
-
-```bash
-npm install
-```
-
-```bash
-cp .env.example .env   # then add ANTHROPIC_API_KEY
-```
-
-Ingest the sample pathway (this runs extraction *and* labeling):
-
-```bash
-npm run ingest -- "Suicide Risk Assessment and Care Planning Clinical Pathway – Outpatient _ Children's Hospital of Philadelphia.pdf" --doc-id suicide-risk-outpatient
-```
-
-No API key yet? Extraction alone still gives you a usable document:
-
-```bash
-npm run ingest -- path/to/pathway.pdf --no-label
-```
-
-Then:
-
-```bash
-npm run dev
-```
-
-- `/` — pathway library and upload
-- `/p/<docId>` — viewer: ask a question, watch the route draw
-- `/review/<docId>` — inspect and correct the extraction, then sign off
-
-## Using the viewer
-
-Route playback follows the shape a navigation app uses, in three phases:
-
-| Phase | What the camera does |
-|---|---|
-| `routing` | Holds the whole page while turns stream in and light up — you watch the route get built |
-| `touring` | Walks the turns one at a time, zoomed in, ~2.2s each |
-| `overview` | Pulls back to frame the entire path |
-
-Transport controls sit top-left of the document: prev / play-pause / next, and
-**Replay** once the tour has finished. Clicking a step in the side panel jumps
-the camera to that turn.
-
-Framing and manual controls sit bottom-right: a pan pad (its centre button fits
-the whole page), zoom in/out with a live percentage, and a **frame the route**
-button. Any manual pan or zoom pauses the tour rather than fighting it — the
-camera stops chasing you until you press play again.
-
-Clicking any box on the document jumps to it, whether or not it is on the route.
-
-## Verifying extraction on a new document
-
-The debug SVG is the fastest way to judge whether a new pathway extracted
-cleanly:
-
-```bash
-npm run extract -- path/to/pathway.pdf data/debug
-```
-
-It prints the node/edge summary and writes `data/debug/page-1.svg` with every
-detected box and traced arrow. On the reference document you should see:
-
-```
-page 1: 22 nodes, 21 edges, 0 unresolved arrowheads
-```
-
 ## Tests and evals
 
 ```bash
@@ -336,19 +361,17 @@ Calls the model and costs money. Eight clinical vignettes covering negative
 screen, all three acuity bands, and two deliberately underspecified cases that
 must return `needs_input`. Run it on every prompt or guardrail change.
 
-## Scope
+## Scope, in implementation terms
 
 Vector PDFs only. Scanned pathways would need an OCR/layout pass (Docling or
 similar) feeding the same `CandidateGraph` shape — the seam is there, the
-implementation is not.
-
-Also not built: multi-pathway handoffs (this document links out to the Depression
-and Behavioral Health ED pathways), and any Epic/SMART-on-FHIR patient context.
+implementation is not. Multi-pathway handoffs would use the link annotations
+already extracted per node; nothing consumes them yet.
 
 ## Safety posture
 
-Clinician-facing decision support for navigating an approved document. Not
-triage, not medical advice. Node text is always shown verbatim — the model's
+A reference tool for navigating an approved document. Not triage, not medical
+advice. Node text is always shown verbatim — the model's
 prose appears only in the "why this turn" rationale, visually separated. Question
 text is never persisted; the audit log records a hash, the graph version, and the
 node sequence.

@@ -52,7 +52,7 @@ export const EMPTY_FACTS: ExtractedFacts = { compiled: {}, clinical: UNKNOWN_FAC
 
 function compiledSchema(model: DecisionModel) {
   const shape: Record<string, z.ZodTypeAny> = {};
-  for (const variable of model.variables) {
+  for (const variable of model.dataItems) {
     const values: [string, ...string[]] = [UNKNOWN, ...variable.options];
     shape[variable.key] = z.enum(values).describe(variable.description);
   }
@@ -74,7 +74,7 @@ export async function extractFacts(options: {
   const { model, includeClinical, question, answers = [] } = options;
   const prompt = promptFor(question, answers);
 
-  const wantsCompiled = (model?.variables.length ?? 0) > 0;
+  const wantsCompiled = (model?.dataItems.length ?? 0) > 0;
   if (!wantsCompiled && !includeClinical) return EMPTY_FACTS;
 
   // Both reads are independent, so pay for one round trip, not two.

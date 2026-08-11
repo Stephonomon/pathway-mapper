@@ -118,6 +118,6 @@ export function forkFor(model: DecisionModel | null, nodeId: string): Fork | und
   return model?.forks.find((f) => f.nodeId === nodeId);
 }
 
-export function variableFor(model: DecisionModel | null, key: string) {
-  return model?.variables.find((v) => v.key === key);
+export function dataItemFor(model: DecisionModel | null, key: string) {
+  return model?.dataItems.find((v) => v.key === key);
 }

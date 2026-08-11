@@ -16,7 +16,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PathwayGraph, Rect, Route, RouteEvent, RouteStep } from '@/lib/schema';
-import { SAMPLE_PROMPTS } from '@/lib/samplePrompts';
+import { decisionModelSchema } from '@/lib/decisions/schema';
+import { detectRuleset } from '@/lib/rules/registry';
 import { OverlayLayer } from './OverlayLayer';
 import { PdfCanvas } from './PdfCanvas';
 import { RoutePanel } from './RoutePanel';
@@ -78,6 +79,23 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
   const [fit, setFit] = useState(0);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, z: 1 });
   const [easeMs, setEaseMs] = useState(TOUR_EASE_MS);
+
+  /**
+   * Starter cases come from the pathway's own compiled model. They were once a
+   * hardcoded list, which put suicide-risk vignettes on an infant apnoea pathway.
+   */
+  const examples = useMemo(() => {
+    if (!graph.decisions) return [];
+    const parsed = decisionModelSchema.safeParse(graph.decisions);
+    return parsed.success ? parsed.data.examples : [];
+  }, [graph.decisions]);
+
+  /**
+   * Crisis resources belong on a pathway about suicide risk and nowhere else.
+   * Showing 988 on a febrile-infant pathway misrepresents what the clinician is
+   * looking at. Reuses the ruleset gate that keeps the C-SSRS rules scoped.
+   */
+  const isSuicideRiskPathway = useMemo(() => detectRuleset(graph) === 'cssrs', [graph]);
 
   const routeNodeIds = useMemo(() => steps.map((s) => s.nodeId), [steps]);
   const routeEdgeIds = useMemo(() => steps.slice(1).map((s) => s.edgeIdFromPrev ?? ''), [steps]);
@@ -339,7 +357,11 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Describe the patient and the question, e.g. “14yo told her counselor she wishes she were dead last week; no plan, no prior attempts”"
+            placeholder={
+              examples[0]
+                ? `Describe the patient, e.g. “${examples[0].text.slice(0, 90)}…”`
+                : 'Describe the patient and the question in plain language'
+            }
             className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
           />
           <button
@@ -351,9 +373,10 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
           </button>
         </form>
 
+        {examples.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] text-[var(--muted)]">Try:</span>
-          {SAMPLE_PROMPTS.map((sample) => (
+          {examples.map((sample) => (
             <button
               key={sample.label}
               type="button"
@@ -370,6 +393,7 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
             </button>
           ))}
         </div>
+        )}
 
         <div
           ref={stageRef}
@@ -447,6 +471,29 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
           <p className="rounded border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">{error}</p>
         )}
 
+        {/* A clinician should know when they are routing through a reading of the
+            document that nobody has checked, and what the extractor was unsure of. */}
+        {(!graph.reviewedAt || graph.warnings.length > 0) && (
+          <details className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
+            <summary className="cursor-pointer font-medium">
+              {graph.reviewedAt
+                ? `${graph.warnings.length} note${graph.warnings.length === 1 ? '' : 's'} on how this pathway was read`
+                : 'This reading of the document has not been reviewed'}
+            </summary>
+            <p className="mt-2">
+              Every step below is drawn from the document, but the boxes and arrows were
+              detected automatically. Check each step against the page before acting on it.
+            </p>
+            {graph.warnings.length > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                {graph.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            )}
+          </details>
+        )}
+
         {clarify && (
           <div className="rounded-lg border border-[var(--accent)] bg-white p-3">
             <p className="text-sm font-medium">{clarify.text}</p>
@@ -476,13 +523,13 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
           onSelect={selectStep}
         />
 
-        <SafetyFooter />
+        <SafetyFooter showCrisisResources={isSuicideRiskPathway} />
       </aside>
     </div>
   );
 }
 
-function SafetyFooter() {
+function SafetyFooter({ showCrisisResources }: { showCrisisResources: boolean }) {
   return (
     <div className="space-y-2 rounded-lg border border-[var(--line)] bg-white p-3 text-[11px] leading-snug text-[var(--muted)]">
       <p>
@@ -494,10 +541,12 @@ function SafetyFooter() {
         Questions are not stored. Only the pathway version and the node sequence are recorded for
         audit.
       </p>
-      <p className="text-[var(--ink)]">
-        Crisis resources: <strong>988</strong> Suicide &amp; Crisis Lifeline · Crisis Text Line: text{' '}
-        <strong>HOME</strong> to <strong>741741</strong>
-      </p>
+      {showCrisisResources && (
+        <p className="text-[var(--ink)]">
+          Crisis resources: <strong>988</strong> Suicide &amp; Crisis Lifeline · Crisis Text Line: text{' '}
+          <strong>HOME</strong> to <strong>741741</strong>
+        </p>
+      )}
     </div>
   );
 }

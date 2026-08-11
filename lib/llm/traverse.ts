@@ -27,7 +27,7 @@ import {
 import { assertModelConfigured, pathwayModel } from './provider';
 import { detectRuleset } from '../rules/registry';
 import { extractFacts, type ExtractedFacts } from '../decisions/extract';
-import { evaluateFork, forkFor, variableFor } from '../decisions/evaluate';
+import { evaluateFork, forkFor, dataItemFor } from '../decisions/evaluate';
 import { decisionModelSchema, type DecisionModel, type FactValues } from '../decisions/schema';
 
 const DEFAULT_MAX_HOPS = 12;
@@ -493,7 +493,7 @@ export async function traverse(options: TraverseOptions): Promise<Route> {
           continue;
         }
       } else if (outcome.kind === 'ask') {
-        const variable = variableFor(decisions, outcome.variableKey);
+        const variable = dataItemFor(decisions, outcome.variableKey);
         if (variable) {
           const ask = { text: variable.question, options: variable.optionLabels };
           emit({ type: 'question', question: ask });

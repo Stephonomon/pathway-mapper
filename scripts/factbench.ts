@@ -90,7 +90,7 @@ async function main() {
 
   console.log(
     decisions
-      ? `benchmarking the merged schema: ${decisions.variables.length} compiled variables + the C-SSRS block`
+      ? `benchmarking the merged schema: ${decisions.dataItems.length} compiled variables + the C-SSRS block`
       : 'no compiled decision model found; benchmarking the C-SSRS block alone',
   );
 

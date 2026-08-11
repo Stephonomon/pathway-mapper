@@ -12,6 +12,11 @@
  * generalises it to any pathway, and the hand-written rules stay in place as an
  * override wherever they apply.
  *
+ * The vocabulary follows GLIF (Ohno-Machado et al., JAMIA 1998): what this calls
+ * a *data item* is GLIF's data item, and a fork rule is its *criteria for
+ * proceeding*. Aligning the names costs nothing and makes the model legible to
+ * anyone who knows that literature.
+ *
  * Conditions are deliberately NOT a recursive expression language. A rule is a
  * conjunction of membership tests, and several rules may target the same edge to
  * express disjunction. That is enough for a decision table, it survives a JSON
@@ -21,10 +26,10 @@
 
 import { z } from 'zod';
 
-/** Every variable carries this, so "we don't know yet" is always representable. */
+/** Every data item carries this, so "we don't know yet" is always representable. */
 export const UNKNOWN = 'unknown';
 
-export const decisionVariableSchema = z.object({
+export const dataItemSchema = z.object({
   key: z
     .string()
     .describe('snake_case identifier, e.g. "screen_result" or "prior_attempt_timing"'),
@@ -43,14 +48,14 @@ export const decisionVariableSchema = z.object({
     .array(z.string())
     .describe('Human-readable label for each option, in the same order, for the answer buttons'),
 });
-export type DecisionVariable = z.infer<typeof decisionVariableSchema>;
+export type DataItem = z.infer<typeof dataItemSchema>;
 
 export const forkRuleSchema = z.object({
   edgeId: z.string().describe('The edge this rule selects. Must be an edge leaving the fork node.'),
   clauses: z
     .array(
       z.object({
-        variable: z.string().describe('A variable key declared in `variables`'),
+        variable: z.string().describe('A data item key declared in `dataItems`'),
         in: z.array(z.string()).describe('Values of that variable which satisfy this clause'),
       }),
     )
@@ -91,11 +96,29 @@ export const forkSchema = z.object({
 });
 export type Fork = z.infer<typeof forkSchema>;
 
+/**
+ * Worked examples for the question box, written once per pathway at compile time.
+ *
+ * These used to be a hardcoded list, which meant a suicide-risk vignette appeared
+ * on an infant apnoea pathway. Generating them per document is the only version
+ * of this that survives a library of a hundred pathways.
+ */
+export const pathwayExampleSchema = z.object({
+  label: z.string().describe('Two or three words for a chip, e.g. "Recent attempt"'),
+  hint: z.string().describe('One line on what this case demonstrates'),
+  text: z.string().describe('A realistic one or two sentence case description a clinician might type'),
+});
+export type PathwayExample = z.infer<typeof pathwayExampleSchema>;
+
 export const decisionModelSchema = z.object({
-  variables: z.array(decisionVariableSchema),
+  dataItems: z.array(dataItemSchema),
   forks: z.array(forkSchema),
+  examples: z
+    .array(pathwayExampleSchema)
+    .describe('Four to six starter cases spanning this pathway\'s distinct outcomes')
+    .default([]),
 });
 export type DecisionModel = z.infer<typeof decisionModelSchema>;
 
-/** Variable values for one patient. Missing keys are treated as `unknown`. */
+/** Data item values for one patient. Missing keys are treated as `unknown`. */
 export type FactValues = Record<string, string>;
