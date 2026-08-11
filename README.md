@@ -8,6 +8,102 @@ the route: each decision node lit in order, each arrow traced, and a panel
 telling you why the pathway sent you down that branch. Everything off-route dims.
 The document underneath is the original, unmodified PDF.
 
+## How it works, in plain terms
+
+There are two separate phases: **preparing a pathway**, which happens once per
+document, and **asking a question**, which happens every time someone uses it.
+
+### Preparing a pathway (once, per PDF)
+
+1. **Read the drawing, not the picture.** A pathway PDF isn't a photo of a
+   flowchart — it's a set of instructions for drawing one. The tool reads those
+   instructions directly, so it knows exactly where every box sits, which arrows
+   connect which boxes, and which way each arrow points. This is ordinary
+   measurement, not interpretation: there is no guesswork and no AI involved.
+2. **Read what the boxes say.** The text inside each box is pulled out word for
+   word, along with the links the document already contains (this pathway has 103
+   of them, pointing to definitions, scales, and case examples).
+3. **Work out what each decision depends on.** AI reads the assembled flowchart
+   once and writes down, in plain rules, what has to be true of a patient to go
+   down each branch — "screen was positive", "an attempt within the last three
+   months". Where the document *doesn't* say (some choices are left to the
+   clinician), it records that too, rather than inventing a rule.
+4. **A human checks it and signs off.** A reviewer opens the document with the
+   tool's reading overlaid on top, corrects anything wrong, and puts their name
+   on it. Nobody gets routed through a pathway that hasn't been signed off.
+
+The output is a small, readable file sitting next to the PDF. That's the whole
+preparation — and it's why answering a question later is fast.
+
+### Asking a question (every time)
+
+1. Someone types a case in ordinary language: *"16yo said this week he's been
+   thinking about taking his mother's pills and intends to do it. No prior
+   attempts."*
+2. The tool turns that into a short checklist of facts — what kind of thoughts,
+   how recently, any prior attempts — and marks anything the description doesn't
+   say as **unknown**.
+3. It then walks the flowchart one step at a time, like turn-by-turn directions.
+   At each step it can only take a turn that is actually drawn on the page.
+4. When the rules settle a step, it takes it. When a fact is missing, **it stops
+   and asks** rather than guessing. When the document itself leaves a choice to
+   the clinician, it asks that too — and says so.
+5. The route is drawn on the original PDF: each box lights up in order, the
+   arrows between them trace out, everything else dims, and a side panel shows
+   the document's own words for each step plus why that turn was taken.
+
+### The four things that make it trustworthy
+
+- **It can't invent a step.** It can only follow arrows that exist on the page.
+- **It shows the document's words**, not a summary. The AI's own wording appears
+  only in the "why this turn" note, kept visually separate.
+- **It asks instead of guessing.** Stopping to ask is treated as a correct
+  outcome, not a failure.
+- **The dangerous decision isn't left to AI.** On this pathway, the low /
+  intermediate / high acuity banding is written out as a plain rule table copied
+  from the document and tested case by case. AI only reads the facts; the table
+  decides the band, and overrules the rest of the system if they disagree.
+
+## Adding another pathway
+
+Point it at a new PDF and it does steps 1–3 above on its own — a couple of
+minutes and a few cents of AI usage per document. A person then spends perhaps
+fifteen minutes on step 4, checking the reading and signing off. There is no
+per-pathway programming.
+
+**What carries over automatically.** Everything about finding boxes and arrows,
+reading text, collecting links, and working out branch rules is generic. The
+"what does this fork depend on" step writes fresh rules for whatever the new
+document actually says, so a diabetes pathway gets diabetes rules without anyone
+writing code.
+
+**What needs attention per pathway.**
+
+- *Check the extraction.* `npm run extract` writes a picture showing every box
+  and arrow it found; if that lines up with the document, everything downstream
+  is on solid ground. Same-template CHOP pathways should work as-is — the
+  Depression and Behavioral Health ED pathways are the obvious next tests.
+  Documents from a different publisher may need the shape rules retuned.
+- *Decide if any branch deserves hand-written rules.* The automatically compiled
+  rules are good, but for a branch where being wrong is genuinely dangerous, do
+  what was done for acuity here: transcribe the criteria by hand, write tests for
+  them, and let them overrule everything else. That's a deliberate, reviewable
+  half-day per critical branch — not a limitation so much as the appropriate
+  amount of care.
+- *Keep the human sign-off.* It's the step that makes this defensible, and it
+  shouldn't be optimised away.
+
+**What doesn't work yet.** Scanned or photographed pathways (the tool needs a
+real vector PDF), and pathways that hand off to each other — this document links
+out to the Depression and Behavioral Health ED pathways, and following those
+links across documents isn't built.
+
+**Scaling to a hundred pathways** is mostly a matter of running preparation over
+them and queueing the reviews. Nothing in the query path grows with the size of
+the library: each question touches exactly one pathway, and answering it costs a
+pair of small, fast AI calls plus table lookups — about a second and a half,
+whether there are three pathways or three hundred.
+
 ## Why it's built this way
 
 The obvious approach — show a model the flowchart and ask "what's the path?" —
