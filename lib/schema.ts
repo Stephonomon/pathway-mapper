@@ -108,8 +108,6 @@ export const pathwayGraphSchema = z.object({
   version: z.number().int().nonnegative(),
   extractedAt: z.string(),
   labeledAt: z.string().nullable(),
-  reviewedBy: z.string().nullable(),
-  reviewedAt: z.string().nullable(),
   /** Non-fatal problems worth showing in the review UI. */
   warnings: z.array(z.string()),
   /**

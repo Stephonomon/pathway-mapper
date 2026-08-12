@@ -40,8 +40,6 @@ const graph = (nodes: PathwayNode[]): PathwayGraph => ({
   version: 1,
   extractedAt: '',
   labeledAt: null,
-  reviewedBy: null,
-  reviewedAt: null,
   warnings: [],
   decisions: null,
   compiledAt: null,

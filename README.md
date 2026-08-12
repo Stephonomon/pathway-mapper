@@ -56,7 +56,8 @@ case by case, and given authority to overrule everything else. On the CHOP suici
 risk pathway, the C-SSRS acuity bands work this way — a model reads the facts, the
 table decides the band.
 
-And a human signs off on the reading before anyone routes through it.
+Where the reading is uncertain, the pathway says so — the viewer carries a "how
+this was read" note listing anything the extractor could not resolve.
 
 ## It already works across institutions
 
@@ -68,6 +69,7 @@ flowchart — and **no pathway-specific code**:
 | Suicide risk assessment | CHOP | Connectors are filled rectangles; grey arrowheads |
 | Brief Resolved Unexplained Event | Johns Hopkins All Children's | Connectors are single block-arrow polygons |
 | Febrile infant | Upstate | Stroked polylines; decision diamonds and rounded boxes |
+| Abdominal pain | Children's Mercy | Added from a URL; needed non-embedded font metrics |
 
 Getting there required generalising the reader, not writing three readers — and
 the two bugs that mattered were only visible *because* there were three documents.
@@ -78,8 +80,10 @@ pathway ask a clinician about suicidal ideation. Colour is a visual convention a
 does not travel between institutions. Hand-written rules are now scoped by what a
 document actually says.
 
-Adding a fourth pathway is a couple of minutes of automated preparation and about
-fifteen minutes of human review. There is no programming step.
+A **fourth** — Children's Mercy's abdominal pain algorithm — was added later
+straight from a URL, and read 30 steps and 19 connections with no code change at
+all. Adding a pathway is a couple of minutes of automated preparation. There is
+no programming step.
 
 ## Where this sits in the literature
 
@@ -94,8 +98,10 @@ expert encodes the guideline at stage 2; GLEE serves stages 6–7. **That encodi
 step is the bottleneck that kept computable guidelines from scaling** — GLIF,
 Arden, PROforma, Asbru, EON and SAGE all specified well and were expensive to
 populate. This attacks stage 2: derive the representation from the published
-artifact and make the human a reviewer rather than an author. What changed since
-2004 isn't the model — it's the cost of filling it in.
+artifact rather than having a person author it. What changed since 2004 isn't the
+model — it's the cost of filling it in. (Checking a derived reading is a much
+smaller job than encoding one from scratch, though this MVP leaves that check to
+the reader rather than building a workflow for it.)
 
 GLIF also required institutions to adopt a shared format upstream. This reads what
 they already publish, which is why three hospitals worked without anyone agreeing
@@ -138,6 +144,28 @@ A shared, searchable layer over the pathways institutions already publish is a
 realistic target, and the marginal cost per pathway is minutes rather than a build
 cycle.
 
+## No pathway documents are stored here
+
+This repository contains **no clinical pathway PDFs**. They are other
+organisations' published material, and there is no reason for a tool that reads
+them to also redistribute them. `Resources/` and `data/` are gitignored; point
+the tool at a link, or drop a local file in and it stays local.
+
+Institutions that publish pathways openly, if you want something to try it on:
+
+| Institution | Where |
+|---|---|
+| Children's Hospital of Philadelphia | [chop.edu/clinical-pathways](https://www.chop.edu/clinical-pathways) |
+| Children's Mercy Kansas City | [childrensmercy.org — evidence-based practice](https://www.childrensmercy.org/health-care-providers/evidence-based-practice/) |
+| Johns Hopkins All Children's | [hopkinsallchildrens.org — clinical pathways](https://www.hopkinsallchildrens.org/Health-Professionals/Clinical-Pathways) |
+| Seattle Children's | [seattlechildrens.org — clinical standard work](https://www.seattlechildrens.org/healthcare-professionals/gateway/pathways/) |
+| Cincinnati Children's | [cincinnatichildrens.org — evidence-based recommendations](https://www.cincinnatichildrens.org/service/j/anderson-center/evidence-based-care) |
+| Upstate Golisano Children's | [upstate.edu](https://www.upstate.edu/golisano/) |
+
+The extraction tests read documents from `Resources/`. They **skip** when the
+files are not there, so a fresh clone runs green; download a couple of the above
+into `Resources/` and they light up.
+
 ---
 
 ## Quick start
@@ -150,10 +178,21 @@ npm install
 cp .env.example .env   # then add ANTHROPIC_API_KEY
 ```
 
-Ingest a pathway (extraction, labeling, and decision-table compilation):
+Read a pathway straight from a link — either the PDF itself, or the page it sits
+on (the PDF will be found for you):
 
 ```bash
-npm run ingest -- "Resources/Sample.BRUE-Clinical-Pathway-graph.pdf" --doc-id brue
+npm run ingest -- "https://www.childrensmercy.org/siteassets/media-documents-for-depts-section/documents-for-health-care-providers/block-clinical-practice-guidelines/mobileview/abdominal-pain-community-providers-algorithm.pdf"
+```
+
+A landing page works too, as long as it links the PDF. Note that some sites —
+CHOP's own pathway pages among them — render pathways as HTML and link no PDF at
+all; for those, use the print/download view if there is one, or a local file.
+
+Or from a local file:
+
+```bash
+npm run ingest -- path/to/pathway.pdf --doc-id my-pathway
 ```
 
 No API key yet? Extraction alone still gives you a usable document:
@@ -168,9 +207,8 @@ Then:
 npm run dev
 ```
 
-- `/` — pathway library and upload
+- `/` — pathway library; add one by link or by file
 - `/p/<docId>` — viewer: ask a question, watch the route draw
-- `/review/<docId>` — inspect and correct the reading, then sign off
 
 ## Using the viewer
 
@@ -226,7 +264,6 @@ acuity. So the work is split by what each part is actually good at:
 |---|---|
 | Where the boxes and arrows are | Deterministic geometry (`lib/pdf/`) |
 | What the boxes mean | The model, once, offline (`lib/llm/label.ts`) |
-| Whether that reading is correct | A human, once, in `/review/[docId]` |
 | Which branch this patient takes | The model, one legal hop at a time (`lib/llm/traverse.ts`) |
 | Acuity | A decision table, not the model (`lib/rules/acuity.ts`) |
 
@@ -325,10 +362,10 @@ exclusive control of that fork.
 ## Pipeline
 
 ```
-PDF ─▶ extract ─▶ classify ─▶ infer ─▶ label ─▶ review ─▶ graph.json
-      vectors,    boxes,      nodes,   kinds,   human
-      text,       arrowheads, edges    labels,  signoff
-      links       shafts               branches
+URL or PDF ─▶ extract ─▶ classify ─▶ infer ─▶ label ─▶ compile ─▶ graph.json
+             vectors,    boxes,      nodes,   kinds,   data items
+             text,       arrowheads, edges    labels,  + decision
+             links       shafts               branches   table
 
 question ─▶ traverse ─▶ Route{steps} ─▶ overlay: spotlight, trace, pan/zoom
             one legal hop at a time
@@ -340,9 +377,8 @@ question ─▶ traverse ─▶ Route{steps} ─▶ overlay: spotlight, trace, p
 npm test
 ```
 
-Deterministic, no API key: the extraction golden test (which catches the
-coordinate-space flip that is otherwise silent) and the full acuity decision
-table.
+Deterministic, no API key. The acuity and decision-table suites always run; the
+extraction suites need pathway PDFs in `Resources/` and skip without them.
 
 ```bash
 npm run factbench

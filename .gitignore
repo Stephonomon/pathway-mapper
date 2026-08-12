@@ -10,6 +10,11 @@ next-env.d.ts
 data/*
 !data/.gitkeep
 
+# Source pathway PDFs are other organisations' material. Keep them local: put
+# whatever you are testing with in Resources/ and it stays out of the repository.
+Resources/
+*.pdf
+
 # Screen recordings and demo captures.
 *.mp4
 *.mov

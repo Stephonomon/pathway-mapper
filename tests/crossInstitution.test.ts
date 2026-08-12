@@ -22,7 +22,10 @@ import { extractDocument } from '@/lib/pdf/extract';
 import { classifyPage } from '@/lib/pdf/primitives';
 import { inferGraph, type CandidateGraph } from '@/lib/pdf/infer';
 
-import { BRUE, CHOP, UPSTATE } from './fixtures';
+import { BRUE, CHOP, UPSTATE, hasAll } from './fixtures';
+
+// Not committed: these are other organisations' published documents. See README.
+const ready = hasAll(CHOP, BRUE, UPSTATE);
 
 async function extract(file: string): Promise<CandidateGraph> {
   const bytes = new Uint8Array(await fs.readFile(file));
@@ -34,6 +37,7 @@ async function extract(file: string): Promise<CandidateGraph> {
 const graphs: Record<string, CandidateGraph> = {};
 
 beforeAll(async () => {
+  if (!ready) return;
   graphs.chop = await extract(CHOP);
   graphs.brue = await extract(BRUE);
   graphs.upstate = await extract(UPSTATE);
@@ -48,7 +52,7 @@ function edgeTargets(graph: CandidateGraph, fromNeedle: string): string[] {
     .map((e) => graph.nodes.find((n) => n.id === e.to)?.text.replace(/\s+/g, ' ') ?? '');
 }
 
-describe('every institution yields a connected graph', () => {
+describe.skipIf(!ready)('every institution yields a connected graph', () => {
   it.each([
     ['chop', 22, 21],
     ['brue', 12, 9],
@@ -71,7 +75,7 @@ describe('every institution yields a connected graph', () => {
   });
 });
 
-describe('Johns Hopkins BRUE — block-arrow connectors', () => {
+describe.skipIf(!ready)('Johns Hopkins BRUE — block-arrow connectors', () => {
   it('traces the documented spine', () => {
     // Shaft and head are one 7-point polygon here, with no separate triangle.
     expect(edgeTargets(graphs.brue, 'Well-appearing patient less than 1 year old').join(' ')).toContain(
@@ -87,7 +91,7 @@ describe('Johns Hopkins BRUE — block-arrow connectors', () => {
   });
 });
 
-describe('Upstate febrile infant — stroked polylines and diamonds', () => {
+describe.skipIf(!ready)('Upstate febrile infant — stroked polylines and diamonds', () => {
   it('finds decision diamonds, which are not axis-aligned rectangles', () => {
     // "Increased IMs??" and "+ UA?" are rotated squares; an axis-aligned-rect
     // test rejects them and the whole middle of the pathway disappears.
@@ -106,7 +110,7 @@ describe('Upstate febrile infant — stroked polylines and diamonds', () => {
   });
 });
 
-describe('graphics state', () => {
+describe.skipIf(!ready)('graphics state', () => {
   it('does not produce white ink', async () => {
     // `q`/`Q` restore colour as well as the transform. Tracking only the
     // transform leaves colour stale after a restore, which showed up as arrows

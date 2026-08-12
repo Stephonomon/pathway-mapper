@@ -12,22 +12,25 @@ import { extractDocument, type RawPage } from '@/lib/pdf/extract';
 import { classifyPage } from '@/lib/pdf/primitives';
 import { inferGraph, type CandidateGraph } from '@/lib/pdf/infer';
 
-// The committed source document, so `npm test` works on a fresh clone with no
-// ingest step. Paths live in one place: tests/fixtures.ts.
-import { CHOP } from './fixtures';
+import { CHOP, has } from './fixtures';
+
 const SAMPLE = CHOP;
+// The source PDFs are other organisations' material and are not committed. Skip
+// rather than fail when they are not present locally.
+const ready = has(SAMPLE);
 
 let page: RawPage;
 let graph: CandidateGraph;
 
 beforeAll(async () => {
+  if (!ready) return;
   const bytes = new Uint8Array(await fs.readFile(SAMPLE));
   const doc = await extractDocument(bytes);
   page = doc.pages[0];
   graph = inferGraph(page, classifyPage(page));
 }, 30_000);
 
-describe('raw extraction', () => {
+describe.skipIf(!ready)('raw extraction', () => {
   it('reads a single US Letter page', () => {
     expect(page.width).toBe(612);
     expect(page.height).toBe(792);
@@ -39,7 +42,7 @@ describe('raw extraction', () => {
   });
 });
 
-describe('classification', () => {
+describe.skipIf(!ready)('classification', () => {
   it('finds every arrowhead in the flowchart', () => {
     const { arrowheads } = classifyPage(page);
     expect(arrowheads.length).toBe(21);
@@ -51,7 +54,7 @@ describe('classification', () => {
   });
 });
 
-describe('inferred graph', () => {
+describe.skipIf(!ready)('inferred graph', () => {
   it('attaches every arrowhead to a source and a target', () => {
     expect(graph.unresolvedArrowheads).toBe(0);
     expect(graph.edges.length).toBe(21);

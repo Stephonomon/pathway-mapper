@@ -17,17 +17,9 @@ export default async function ViewerPage({ params }: { params: Promise<{ docId: 
           ← Pathways
         </Link>
         <h1 className="text-sm font-semibold">{graph.title}</h1>
-        {!graph.reviewedAt && (
-          <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
-            extraction unreviewed
-          </span>
-        )}
-        <Link
-          href={`/review/${graph.docId}`}
-          className="ml-auto rounded border border-[var(--line)] px-2 py-1 text-xs hover:bg-slate-50"
-        >
-          Review extraction
-        </Link>
+        <span className="ml-auto text-xs text-[var(--muted)]">
+          {graph.nodes.length} steps · read automatically from the document
+        </span>
       </header>
 
       <PathwayViewer graph={graph} />

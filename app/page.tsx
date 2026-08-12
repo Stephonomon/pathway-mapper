@@ -39,10 +39,10 @@ export default async function HomePage() {
                   </p>
                 </div>
                 <Link
-                  href={`/review/${doc.docId}`}
+                  href={`/p/${doc.docId}`}
                   className="shrink-0 rounded border border-[var(--line)] px-2 py-1 text-xs hover:bg-slate-50"
                 >
-                  Review extraction
+                  Open
                 </Link>
               </li>
             ))}

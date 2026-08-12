@@ -122,8 +122,6 @@ export function buildUnlabeledGraph(
     version: 1,
     extractedAt: now,
     labeledAt: null,
-    reviewedBy: null,
-    reviewedAt: null,
     decisions: null,
     compiledAt: null,
     warnings: graphs.flatMap((g) =>

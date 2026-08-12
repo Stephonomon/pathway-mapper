@@ -473,12 +473,12 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
 
         {/* A clinician should know when they are routing through a reading of the
             document that nobody has checked, and what the extractor was unsure of. */}
-        {(!graph.reviewedAt || graph.warnings.length > 0) && (
+        {(
           <details className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
             <summary className="cursor-pointer font-medium">
-              {graph.reviewedAt
-                ? `${graph.warnings.length} note${graph.warnings.length === 1 ? '' : 's'} on how this pathway was read`
-                : 'This reading of the document has not been reviewed'}
+              How this pathway was read
+              {graph.warnings.length > 0 &&
+                ` · ${graph.warnings.length} note${graph.warnings.length === 1 ? '' : 's'}`}
             </summary>
             <p className="mt-2">
               Every step below is drawn from the document, but the boxes and arrows were

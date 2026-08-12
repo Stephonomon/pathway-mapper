@@ -12,6 +12,7 @@ import { inferGraph } from '@/lib/pdf/infer';
 import { buildUnlabeledGraph, labelGraph } from '@/lib/llm/label';
 import { compileDecisionModel } from '@/lib/decisions/compile';
 import { toDocId, writeGraph, writeSource } from '@/lib/store';
+import { fetchPathwayPdf, FetchPathwayError } from '@/lib/fetchPathway';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -19,12 +20,34 @@ export const maxDuration = 300;
 export async function POST(request: Request) {
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');
-  if (!(file instanceof File)) {
-    return Response.json({ error: 'expected a multipart form with a "file" field' }, { status: 400 });
+  const url = typeof form?.get('url') === 'string' ? String(form.get('url')).trim() : '';
+
+  let bytes: Uint8Array;
+  let sourceName: string;
+  let sourceUrl: string | null = null;
+
+  if (url) {
+    // Not everyone has the PDF to hand; most pathways are published on the web.
+    try {
+      const fetched = await fetchPathwayPdf(url);
+      bytes = fetched.bytes;
+      sourceName = fetched.filename;
+      sourceUrl = fetched.sourceUrl;
+    } catch (err) {
+      const message = err instanceof FetchPathwayError ? err.message : (err as Error).message;
+      return Response.json({ error: message }, { status: 422 });
+    }
+  } else if (file instanceof File) {
+    bytes = new Uint8Array(await file.arrayBuffer());
+    sourceName = file.name;
+  } else {
+    return Response.json(
+      { error: 'Provide either a "file" upload or a "url" field.' },
+      { status: 400 },
+    );
   }
 
-  const docId = toDocId(file.name);
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const docId = toDocId(sourceUrl ?? sourceName);
 
   let graphs;
   try {
@@ -46,7 +69,7 @@ export async function POST(request: Request) {
   }
 
   await writeSource(docId, bytes);
-  const options = { docId, sourceFile: file.name, fallbackTitle: file.name };
+  const options = { docId, sourceFile: sourceUrl ?? sourceName, fallbackTitle: sourceName };
 
   let graph;
   let labelingError: string | null = null;
@@ -78,5 +101,6 @@ export async function POST(request: Request) {
     edges: saved.edges.length,
     warnings: saved.warnings,
     labeled: labelingError === null,
+    sourceUrl,
   });
 }

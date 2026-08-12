@@ -19,24 +19,37 @@ import { inferGraph } from '../lib/pdf/infer';
 import { buildUnlabeledGraph, labelGraph } from '../lib/llm/label';
 import { compileDecisionModel } from '../lib/decisions/compile';
 import { toDocId, writeGraph, writeSource } from '../lib/store';
+import { fetchPathwayPdf, FetchPathwayError } from '../lib/fetchPathway';
 
 async function main() {
   const args = process.argv.slice(2);
   const input = args.find((a) => !a.startsWith('--'));
   if (!input) {
-    console.error('usage: npm run ingest -- <pdf> [--no-label] [--doc-id <id>]');
+    console.error('usage: npm run ingest -- <pdf-path-or-url> [--no-label] [--doc-id <id>]');
     process.exit(1);
   }
 
   const noLabel = args.includes('--no-label');
   const docIdFlag = args.indexOf('--doc-id');
-  const docId = docIdFlag >= 0 ? args[docIdFlag + 1] : toDocId(path.basename(input));
+  const docId = docIdFlag >= 0 ? args[docIdFlag + 1] : toDocId(input);
 
-  const bytes = new Uint8Array(await fs.readFile(input));
+  const isUrl = /^https?:\/\//i.test(input);
+  let bytes: Uint8Array;
+  let sourceName = path.basename(input);
+
+  if (isUrl) {
+    console.log(`fetching ${input} …`);
+    const fetched = await fetchPathwayPdf(input);
+    bytes = fetched.bytes;
+    sourceName = fetched.filename;
+    if (fetched.sourceUrl !== input) console.log(`resolved to ${fetched.sourceUrl}`);
+  } else {
+    bytes = new Uint8Array(await fs.readFile(input));
+  }
   const doc = await extractDocument(bytes);
   const graphs = doc.pages.map((page) => inferGraph(page, classifyPage(page)));
 
-  const options = { docId, sourceFile: path.basename(input), fallbackTitle: path.basename(input) };
+  const options = { docId, sourceFile: sourceName, fallbackTitle: sourceName };
   await writeSource(docId, bytes);
 
   let graph;
@@ -81,6 +94,12 @@ async function main() {
 }
 
 main().catch((err) => {
+  // A bad or unsupported URL is a normal outcome, not a crash. Print what went
+  // wrong without a stack trace the reader cannot act on.
+  if (err instanceof FetchPathwayError) {
+    console.error(`\n${err.message}`);
+    process.exit(1);
+  }
   console.error(err);
   process.exit(1);
 });

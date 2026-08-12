@@ -7,6 +7,9 @@
  * described in `geometry.ts`.
  */
 
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { Matrix, Point, Rect } from './geometry';
 import { applyMatrix, boundsOf, multiply, parseHexColor } from './geometry';
 
@@ -83,6 +86,21 @@ interface PdfPageProxy {
   getOperatorList(): Promise<{ fnArray: number[]; argsArray: unknown[] }>;
   getTextContent(): Promise<{ items: unknown[] }>;
   getAnnotations(): Promise<unknown[]>;
+}
+
+/**
+ * Where pdf.js keeps the Base-14 font metrics. Documents that reference Helvetica
+ * or Times without embedding them need these; without the path pdf.js warns and
+ * their text comes out wrong or empty.
+ */
+function standardFontDataUrl(): string | undefined {
+  try {
+    const require = createRequire(import.meta.url);
+    const entry = require.resolve('pdfjs-dist/package.json');
+    return pathToFileURL(path.join(path.dirname(entry), 'standard_fonts/')).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 let pdfjsPromise: Promise<PdfJsModule> | null = null;
@@ -210,6 +228,9 @@ function extractPaths(
       const subpaths: Point[][] = [];
       const closed: boolean[] = [];
       for (const raw of rawSubpaths ?? []) {
+        // pdf.js emits a null subpath for some constructs (seen on Children's
+        // Mercy's algorithms). Skip it rather than dying mid-document.
+        if (!raw || typeof raw.length !== 'number') continue;
         const decoded = decodeSubpath(raw, ctm);
         if (decoded.points.length === 0) continue;
         subpaths.push(decoded.points);
@@ -307,6 +328,7 @@ export async function extractDocument(bytes: Uint8Array): Promise<RawDocument> {
     // Pathway PDFs use subset fonts; we only need metrics, not rendering.
     useSystemFonts: false,
     isEvalSupported: false,
+    standardFontDataUrl: standardFontDataUrl(),
   }).promise;
 
   try {

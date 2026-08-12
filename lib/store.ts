@@ -5,9 +5,9 @@
  *   data/<docId>/graph.json     the validated PathwayGraph
  *   data/<docId>/audit.jsonl    one line per routing request (no PHI)
  *
- * Deliberately not a database: a reviewed pathway graph is a small, versioned
- * artifact that a clinician may want to read, diff, and check into source
- * control alongside the PDF it came from.
+ * Deliberately not a database: a pathway graph is a small, readable artifact
+ * that can be diffed and inspected directly. Note that `data/` is gitignored —
+ * ingested documents are other organisations' material and stay local.
  */
 
 import fs from 'node:fs/promises';
@@ -55,7 +55,7 @@ export async function listDocs(): Promise<{ docId: string; title: string; versio
 
 /**
  * Parsed graphs, keyed by docId and invalidated on mtime. A pathway graph is
- * immutable between reviews, so re-reading and re-validating it on every request
+ * immutable once ingested, so re-reading and re-validating it on every request
  * is pure waste — and with a library of a hundred pathways under load, that waste
  * lands on the request path.
  */
@@ -114,10 +114,22 @@ export async function appendAudit(
   await fs.appendFile(path.join(docDir(docId), 'audit.jsonl'), `${JSON.stringify(entry)}\n`);
 }
 
-/** Slugify a filename into a usable docId. */
-export function toDocId(filename: string): string {
+/** Slugify a filename or URL into a usable docId. */
+export function toDocId(source: string): string {
+  // A URL's last path segment names the document better than its host does.
+  const cleaned = /^https?:\/\//i.test(source)
+    ? (() => {
+        try {
+          const url = new URL(source);
+          return url.pathname.split('/').filter(Boolean).pop() ?? url.hostname;
+        } catch {
+          return source;
+        }
+      })()
+    : source;
+
   const base = path
-    .basename(filename, path.extname(filename))
+    .basename(cleaned, path.extname(cleaned))
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
