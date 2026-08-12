@@ -43,6 +43,7 @@ const graph = (nodes: PathwayNode[]): PathwayGraph => ({
   warnings: [],
   decisions: null,
   compiledAt: null,
+  source: { kind: 'pdf' as const, html: null, url: null },
 });
 
 describe('ruleset detection', () => {

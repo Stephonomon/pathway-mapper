@@ -1,14 +1,16 @@
 /**
- * Resolve a URL to pathway PDF bytes.
+ * Resolve a URL to a pathway document.
  *
- * Two shapes are common in the wild and both are supported:
+ * Three shapes are common in the wild and all are supported:
  *
- *   direct PDF   childrensmercy.org/.../abdominal-pain-algorithm.pdf
- *   landing page chop.edu/clinical-pathway/abuse-physical-clinical-pathway
+ *   direct PDF     childrensmercy.org/.../abdominal-pain-algorithm.pdf
+ *   linked PDF     a landing page that links the algorithm PDF
+ *   HTML pathway   chop.edu/clinical-pathway/… — the page *is* the flowchart,
+ *                  drawn as positioned markup, with no PDF anywhere
  *
- * For a landing page we look for a linked PDF and fetch that instead, preferring
- * links whose text or filename suggests the algorithm itself over the supporting
- * material most pathway pages also publish.
+ * A linked PDF wins over the page's own markup when both exist: it is the
+ * authoritative artifact. Candidate links are scored so the algorithm beats the
+ * patient-education material most pathway pages also publish.
  *
  * This endpoint takes a URL from the user and fetches it server-side, which is a
  * request-forgery surface. The guards below are deliberately strict: HTTPS only,
@@ -23,6 +25,9 @@ const MAX_BYTES = 30 * 1024 * 1024;
 const TIMEOUT_MS = 45_000;
 const MAX_REDIRECTS = 5;
 const USER_AGENT = 'PathwayMapper/0.1 (clinical pathway reader)';
+
+/** Cheap check for a page that renders its pathway as markup rather than a PDF. */
+const PATHWAY_MARKUP = /class=["'][^"']*\bpathway\b/i;
 
 export class FetchPathwayError extends Error {}
 
@@ -177,17 +182,29 @@ function filenameFor(url: URL): string {
 }
 
 export interface FetchedPathway {
+  kind: 'pdf';
   bytes: Uint8Array;
   /** The URL the PDF actually came from, which may differ from what was given. */
   sourceUrl: string;
   filename: string;
 }
 
-export async function fetchPathwayPdf(input: string): Promise<FetchedPathway> {
+/** Some institutions publish the pathway as the page itself, with no PDF at all. */
+export interface FetchedHtml {
+  kind: 'html';
+  html: string;
+  sourceUrl: string;
+  filename: string;
+}
+
+export type FetchedDocument = FetchedPathway | FetchedHtml;
+
+export async function fetchPathwayDocument(input: string): Promise<FetchedDocument> {
   const first = await fetchChecked(input);
 
   if (looksLikePdf(first.body, first.contentType)) {
     return {
+      kind: 'pdf',
       bytes: first.body,
       sourceUrl: first.url.toString(),
       filename: filenameFor(first.url),
@@ -201,10 +218,21 @@ export async function fetchPathwayPdf(input: string): Promise<FetchedPathway> {
   }
 
   const html = new TextDecoder('utf-8', { fatal: false }).decode(first.body);
+
+  // Prefer a linked PDF when there is one — it is the authoritative artifact.
+  // Otherwise the page may *be* the pathway, rendered as positioned HTML.
   const candidates = findPdfLinks(html, first.url);
   if (candidates.length === 0) {
+    if (PATHWAY_MARKUP.test(html)) {
+      return {
+        kind: 'html',
+        html,
+        sourceUrl: first.url.toString(),
+        filename: filenameFor(first.url).replace(/\.pdf$/, ''),
+      };
+    }
     throw new FetchPathwayError(
-      'That page has no linked PDF. Open it, find the pathway PDF, and paste that link instead.',
+      'That page has neither a linked PDF nor a pathway diagram this can read.',
     );
   }
 
@@ -216,6 +244,7 @@ export async function fetchPathwayPdf(input: string): Promise<FetchedPathway> {
       const resource = await fetchChecked(candidate);
       if (looksLikePdf(resource.body, resource.contentType)) {
         return {
+          kind: 'pdf',
           bytes: resource.body,
           sourceUrl: resource.url.toString(),
           filename: filenameFor(resource.url),
@@ -225,6 +254,15 @@ export async function fetchPathwayPdf(input: string): Promise<FetchedPathway> {
     } catch (err) {
       errors.push((err as Error).message);
     }
+  }
+
+  if (PATHWAY_MARKUP.test(html)) {
+    return {
+      kind: 'html',
+      html,
+      sourceUrl: first.url.toString(),
+      filename: filenameFor(first.url).replace(/\.pdf$/, ''),
+    };
   }
 
   throw new FetchPathwayError(

@@ -70,6 +70,7 @@ flowchart — and **no pathway-specific code**:
 | Brief Resolved Unexplained Event | Johns Hopkins All Children's | Connectors are single block-arrow polygons |
 | Febrile infant | Upstate | Stroked polylines; decision diamonds and rounded boxes |
 | Abdominal pain | Children's Mercy | Added from a URL; needed non-embedded font metrics |
+| Physical abuse, ED | CHOP | **Not a PDF at all** — read from the page's own HTML |
 
 Getting there required generalising the reader, not writing three readers — and
 the two bugs that mattered were only visible *because* there were three documents.
@@ -84,6 +85,29 @@ A **fourth** — Children's Mercy's abdominal pain algorithm — was added later
 straight from a URL, and read 30 steps and 19 connections with no code change at
 all. Adding a pathway is a couple of minutes of automated preparation. There is
 no programming step.
+
+### Two readers, one pipeline
+
+Institutions publish pathways as PDFs or as web pages, so there are two readers:
+
+| | PDF | HTML |
+|---|---|---|
+| Boxes | stroked/filled shapes, classified by geometry | elements whose class says `outline` |
+| Acuity | inferred from stroke colour | named in the class (`urgent`, `critical`) |
+| Arrows | triangles and shafts, direction from geometry | class names the direction outright |
+| Display | rendered to canvas by pdf.js | the institution's own markup, sanitised |
+
+The HTML reader is the simpler of the two — the markup says what things are,
+where vector geometry has to be measured and guessed at. Both emit the same
+candidate graph, so labeling, decision compilation, routing and the overlay are
+shared and neither knows where the graph came from.
+
+Because the page is re-rendered without its author's stylesheet, an HTML pathway
+looks close to but not exactly like the original. Positions come out right — the
+viewer measures the real layout rather than trusting the server's arithmetic — so
+the route always lands on the correct boxes, but typography and spacing differ.
+Third-party markup is stripped of scripts, event handlers and frames before it is
+ever stored.
 
 ## Where this sits in the literature
 
@@ -185,9 +209,13 @@ on (the PDF will be found for you):
 npm run ingest -- "https://www.childrensmercy.org/siteassets/media-documents-for-depts-section/documents-for-health-care-providers/block-clinical-practice-guidelines/mobileview/abdominal-pain-community-providers-algorithm.pdf"
 ```
 
-A landing page works too, as long as it links the PDF. Note that some sites —
-CHOP's own pathway pages among them — render pathways as HTML and link no PDF at
-all; for those, use the print/download view if there is one, or a local file.
+A landing page works too. If it links a PDF, that wins — it is the authoritative
+artifact. If it has no PDF at all and renders the pathway as markup, as CHOP's
+own pathway pages do, the markup is read instead:
+
+```bash
+npm run ingest -- "https://www.chop.edu/clinical-pathway/abuse-physical-clinical-pathway"
+```
 
 Or from a local file:
 

@@ -21,6 +21,7 @@
     "@ai-sdk/react": "^3.0.151",
     "ai": "^6.0.149",
     "next": "^16.2.2",
+    "node-html-parser": "^9.0.1",
     "pdfjs-dist": "^5.4.149",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

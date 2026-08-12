@@ -97,6 +97,18 @@ export const storedDecisionModelSchema = z
   })
   .passthrough();
 
+/**
+ * How the source document is displayed. A PDF is rendered to canvas; an HTML
+ * pathway is the institution's own (sanitised) markup, re-rendered in place.
+ */
+export const pathwaySourceSchema = z.object({
+  kind: z.enum(['pdf', 'html']).default('pdf'),
+  /** Sanitised markup for `html` pathways. Null for PDFs. */
+  html: z.string().nullable().default(null),
+  /** Where it came from, when it came from the web. */
+  url: z.string().nullable().default(null),
+});
+
 export const pathwayGraphSchema = z.object({
   docId: z.string(),
   title: z.string(),
@@ -116,6 +128,7 @@ export const pathwayGraphSchema = z.object({
    */
   decisions: storedDecisionModelSchema.nullable().default(null),
   compiledAt: z.string().nullable().default(null),
+  source: pathwaySourceSchema.default({ kind: 'pdf', html: null, url: null }),
 });
 export type PathwayGraph = z.infer<typeof pathwayGraphSchema>;
 

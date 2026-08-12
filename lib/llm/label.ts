@@ -75,6 +75,7 @@ function describeGraph(graphs: CandidateGraph[]): string {
 export interface LabelOptions {
   docId: string;
   sourceFile: string;
+  source?: { kind: 'pdf' | 'html'; html: string | null; url: string | null };
   /** Falls back to the extractor's own guess when labeling is skipped. */
   fallbackTitle?: string;
 }
@@ -124,6 +125,7 @@ export function buildUnlabeledGraph(
     labeledAt: null,
     decisions: null,
     compiledAt: null,
+    source: options.source ?? { kind: 'pdf', html: null, url: null },
     warnings: graphs.flatMap((g) =>
       g.unresolvedArrowheads > 0
         ? [`page ${g.page}: ${g.unresolvedArrowheads} arrowheads could not be attached to nodes`]

@@ -20,6 +20,7 @@ import { decisionModelSchema } from '@/lib/decisions/schema';
 import { detectRuleset } from '@/lib/rules/registry';
 import { OverlayLayer } from './OverlayLayer';
 import { PdfCanvas } from './PdfCanvas';
+import { HtmlPathwayStage } from './HtmlPathwayStage';
 import { RoutePanel } from './RoutePanel';
 import { RoutePlayback } from './RoutePlayback';
 import { ViewportControls } from './ViewportControls';
@@ -61,9 +62,46 @@ function unionRects(rects: Rect[]): Rect | null {
   };
 }
 
-export function PathwayViewer({ graph }: PathwayViewerProps) {
-  const page = graph.pages[0];
+export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
   const stageRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * HTML pathways are re-measured once rendered: the server's geometry came from
+   * summing inline offsets, which is close but not exact. Everything downstream
+   * — the overlay, pan/zoom, route framing — then works off real layout.
+   */
+  const [measured, setMeasured] = useState<{
+    boxes: Map<string, Rect>;
+    size: { width: number; height: number };
+  } | null>(null);
+
+  // Stable identity: a new function each render would restart the measurement
+  // effect and loop.
+  const handleMeasured = useCallback(
+    (boxes: Map<string, Rect>, size: { width: number; height: number }) =>
+      setMeasured({ boxes, size }),
+    [],
+  );
+
+  const graph = useMemo(() => {
+    if (stored.source.kind !== 'html' || !measured) return stored;
+    return {
+      ...stored,
+      pages: [{ number: 1, width: measured.size.width, height: measured.size.height }],
+      nodes: stored.nodes.map((n) => ({ ...n, bbox: measured.boxes.get(n.id) ?? n.bbox })),
+      edges: stored.edges.map((e) => {
+        // Redraw connectors between the measured boxes they actually join.
+        const from = measured.boxes.get(e.from);
+        const to = measured.boxes.get(e.to);
+        if (!from || !to) return e;
+        const a: [number, number] = [from.x + from.w / 2, from.y + from.h];
+        const b: [number, number] = [to.x + to.w / 2, to.y];
+        return { ...e, polyline: [a, b], arrowAt: b };
+      }),
+    };
+  }, [stored, measured]);
+
+  const page = graph.pages[0];
 
   const [question, setQuestion] = useState('');
   const [pending, setPending] = useState(false);
@@ -408,13 +446,27 @@ export function PathwayViewer({ graph }: PathwayViewerProps) {
               height: page.height * fit,
             }}
           >
-            <PdfCanvas
-              src={`/api/source/${graph.docId}`}
-              pageNumber={page.number}
-              width={page.width * fit}
-              height={page.height * fit}
-              onError={setError}
-            />
+            {graph.source.kind === 'html' ? (
+              // The institution's own markup, put back on screen at page scale.
+              <div
+                style={{
+                  width: page.width,
+                  height: page.height,
+                  transform: `scale(${fit})`,
+                  transformOrigin: 'top left',
+                }}
+              >
+                <HtmlPathwayStage graph={stored} onMeasured={handleMeasured} />
+              </div>
+            ) : (
+              <PdfCanvas
+                src={`/api/source/${graph.docId}`}
+                pageNumber={page.number}
+                width={page.width * fit}
+                height={page.height * fit}
+                onError={setError}
+              />
+            )}
             <OverlayLayer
               graph={graph}
               pageNumber={page.number}

@@ -10,16 +10,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadEnv } from './env';
-import { extractDocument } from '../lib/pdf/extract';
 
 loadEnv();
 
-import { classifyPage } from '../lib/pdf/primitives';
-import { inferGraph } from '../lib/pdf/infer';
-import { buildUnlabeledGraph, labelGraph } from '../lib/llm/label';
-import { compileDecisionModel } from '../lib/decisions/compile';
-import { toDocId, writeGraph, writeSource } from '../lib/store';
-import { fetchPathwayPdf, FetchPathwayError } from '../lib/fetchPathway';
+import { toDocId } from '../lib/store';
+import { fetchPathwayDocument, FetchPathwayError } from '../lib/fetchPathway';
+import { ingestDocument, type IngestInput } from '../lib/ingest';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -33,64 +29,36 @@ async function main() {
   const docIdFlag = args.indexOf('--doc-id');
   const docId = docIdFlag >= 0 ? args[docIdFlag + 1] : toDocId(input);
 
-  const isUrl = /^https?:\/\//i.test(input);
-  let bytes: Uint8Array;
-  let sourceName = path.basename(input);
-
-  if (isUrl) {
+  let payload: IngestInput;
+  if (/^https?:\/\//i.test(input)) {
     console.log(`fetching ${input} …`);
-    const fetched = await fetchPathwayPdf(input);
-    bytes = fetched.bytes;
-    sourceName = fetched.filename;
+    const fetched = await fetchPathwayDocument(input);
     if (fetched.sourceUrl !== input) console.log(`resolved to ${fetched.sourceUrl}`);
+    console.log(`reading as ${fetched.kind.toUpperCase()}`);
+    payload =
+      fetched.kind === 'pdf'
+        ? { kind: 'pdf', bytes: fetched.bytes, filename: fetched.filename, url: fetched.sourceUrl }
+        : { kind: 'html', html: fetched.html, url: fetched.sourceUrl, filename: fetched.filename };
   } else {
-    bytes = new Uint8Array(await fs.readFile(input));
-  }
-  const doc = await extractDocument(bytes);
-  const graphs = doc.pages.map((page) => inferGraph(page, classifyPage(page)));
-
-  const options = { docId, sourceFile: sourceName, fallbackTitle: sourceName };
-  await writeSource(docId, bytes);
-
-  let graph;
-  if (noLabel) {
-    graph = buildUnlabeledGraph(graphs, options);
-    graph.warnings.push('ingested with --no-label: labels and branch conditions are placeholders');
-  } else {
-    try {
-      graph = await labelGraph(graphs, options);
-    } catch (err) {
-      console.warn(`labeling failed (${(err as Error).message}); saving geometry-only graph`);
-      graph = buildUnlabeledGraph(graphs, options);
-      graph.warnings.push(`labeling did not run: ${(err as Error).message}`);
-    }
+    payload = {
+      kind: 'pdf',
+      bytes: new Uint8Array(await fs.readFile(input)),
+      filename: path.basename(input),
+    };
   }
 
-  // Precompute the decision table. This is the work that keeps query time down:
-  // deriving what each fork branches on is per-pathway, not per-question.
-  if (!noLabel) {
-    try {
-      const { model, warnings } = await compileDecisionModel(graph);
-      graph.decisions = model;
-      graph.compiledAt = new Date().toISOString();
-      graph.warnings.push(...warnings);
-      const judgement = model.forks.filter((f) => f.judgementCall).length;
-      console.log(
-        `compiled ${model.dataItems.length} data items, ${model.forks.length} forks (${judgement} left to clinical judgement)`,
-      );
-    } catch (err) {
-      console.warn(`decision compilation failed (${(err as Error).message}); routing will ask the model at every fork`);
-      graph.warnings.push(`decision compilation failed: ${(err as Error).message}`);
-    }
-  }
+  const { graph } = await ingestDocument(payload, {
+    docId,
+    noLabel,
+    onProgress: (m) => console.log(m),
+  });
 
-  const saved = await writeGraph(graph);
   console.log(
-    `${saved.docId}: ${saved.nodes.length} nodes, ${saved.edges.length} edges, v${saved.version}`,
+    `${graph.docId}: ${graph.nodes.length} nodes, ${graph.edges.length} edges, v${graph.version}`,
   );
-  console.log(`entry: ${saved.entryNodeIds.join(', ') || '(none)'}`);
-  for (const warning of saved.warnings) console.log(`  warning: ${warning}`);
-  console.log(`\nopen http://localhost:3000/p/${saved.docId}`);
+  console.log(`entry: ${graph.entryNodeIds.join(', ') || '(none)'}`);
+  for (const warning of graph.warnings) console.log(`  warning: ${warning}`);
+  console.log(`\nopen http://localhost:3000/p/${graph.docId}`);
 }
 
 main().catch((err) => {
