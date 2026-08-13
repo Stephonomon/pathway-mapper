@@ -14,8 +14,11 @@ route you watched being built, not as a verdict you have to take on faith.
 It is not a summary of the pathway, and not a chatbot that has read it. The route
 is drawn on the source.
 
-## 🎥 Video Demo
-[docs/path_mapper_image.png](https://youtu.be/0SLkzHFWGb0)
+## 🎥 Video demo
+
+[![Pathway Mapper — a route traced turn by turn on a clinical pathway](docs/path_mapper_image.png)](https://youtu.be/0SLkzHFWGb0)
+
+▶ [Watch the demo on YouTube](https://youtu.be/0SLkzHFWGb0)
 
 
 ## Why this exists
