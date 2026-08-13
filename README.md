@@ -14,7 +14,7 @@ route you watched being built, not as a verdict you have to take on faith.
 It is not a summary of the pathway, and not a chatbot that has read it. The route
 is drawn on the source.
 
-[![Watch the video](https://youtu.be/0SLkzHFWGb0)]
+[![Watch the demo](https://img.youtube.com/esdefault.jpg](https://youtu.be/0SLkzHFWGb0)
 
 
 ## Why this exists
