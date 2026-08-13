@@ -1,44 +1,74 @@
 # Pathway Mapper
 
 **Ask a clinical question in plain language. Get turn-by-turn directions through a
-clinical pathway, drawn on the pathway document itself.**
+clinical pathway — the route drawn on the pathway document itself, not just the
+answer at the end of it.**
 
 A clinician types *"5-week-old, brief apnoeic episode, first event, no CPR, well
-appearing"* and the tool walks the published pathway one decision at a time —
-lighting each step on the original document, taking the step where the document
-determines the answer, and stopping to ask where it doesn't. The page underneath
-is the approved PDF (or the institution's own pathway web page), unchanged.
+appearing"* and the tool walks the published pathway one decision at a time,
+lighting each step on the original document, showing the factor that drove each
+turn, and stopping to ask where the document leaves the choice open. The
+recommended step is still there at the end — but it arrives as the last stop on a
+route you watched being built, not as a verdict you have to take on faith.
 
-It is not a summary, and not a chatbot that has read the pathway. The route is
-drawn on the source.
+It is not a summary of the pathway, and not a chatbot that has read it. The route
+is drawn on the source.
 
-## The problem
+## Why this exists
 
-Every children's hospital publishes clinical pathways as flowchart PDFs — the
-product of enormous committee effort, and genuinely good. They are also hard to
-use at the moment of care: you have to find the right one and trace the right line
-through it while holding a specific patient in your head.
+A clinical pathway is not an answer key. It is a piece of *reasoning* — laid out
+step by step, the product of enormous committee effort, so a clinician can follow
+the logic from presentation to disposition. That stepwise structure is the whole
+point: it shows which factors matter, in what order, and where the decision could
+reasonably go a different way.
 
-The usual fix is to rebuild each pathway inside the EHR as order sets and alerts,
-which costs a build cycle per pathway — so most pathways never get one, and the
-PDF stays static. Pathway Mapper turns the published document itself into the
-interface. Nothing is rebuilt and nothing is replaced; the approved document stays
-the source of truth.
+Those pathways are genuinely good, and also hard to use at the moment of care: you
+have to find the right one and trace the right line through it while holding a
+specific patient in your head. The obvious thing to do with an LLM is to remove
+that friction by collapsing the pathway into a question-and-answer box — type the
+patient, get the recommended step. It works. It also throws away the most valuable
+part.
+
+**What gets lost is the work.** The user is handed a destination with no route.
+They can't see *how* the answer was reached, which factors drove it, or whether a
+different, equally defensible path was available. And when the answer is one they
+might disagree with, they have no view of where they would have turned off. Asking
+the model to "show its work" after the fact doesn't fix this — a fluent model will
+narrate a plausible-sounding rationale that may not be what actually produced the
+answer.
+
+**Think of navigation software.** If it only ever told you the destination, you
+would have no way to judge whether the route was sensible, no view of the
+alternatives, and no ability to say *"not that way — take this road instead."* The
+route is what earns your trust. Seeing it turn by turn is what lets you follow it,
+question it, and override it.
+
+Pathway Mapper applies that idea to clinical pathways. Instead of collapsing the
+pathway into an answer, it draws the **route**: each decision lit in order on the
+original document, the factor behind each turn shown beside it, and the branch
+points where the clinician could reasonably choose to go another way left visible.
+The document stays the source of truth, and the reasoning stays inspectable —
+because the route you see *is* the computation, validated step by step against the
+document, not a story told about it afterwards.
 
 ## How it works
 
 The document is read the way a person reads a flowchart — boxes, arrows, and the
 words inside them — into a graph. A question is then routed through that graph one
-legal hop at a time. Four properties make the route trustworthy:
+legal hop at a time. Four properties are what make the visible reasoning
+trustworthy rather than decorative:
 
 - **It cannot invent a step.** Routing may only follow arrows measured off the
-  page; every hop is validated against the real graph, so a route is by
-  construction a sequence of turns the document draws.
+  page; every hop is validated against the real graph. A route is by construction
+  a sequence of turns the document actually draws — so the steps you see are the
+  steps that happened.
 - **It shows the document's words.** Node text is verbatim. Model-written prose
-  appears only in the "why this turn" note, kept visually separate.
+  appears only in the short "why this turn" note beside each step, kept visually
+  separate from the pathway's own language.
 - **It asks instead of guessing.** When a fact a branch depends on is missing, the
-  tool stops and asks for exactly that fact. Asking is a success state, not a
-  failure.
+  tool stops and asks for exactly that fact rather than picking for you. Asking is
+  a success state — it keeps a real decision point visible instead of papering over
+  it.
 - **The dangerous decisions aren't left to a model.** Where a branch is
   safety-critical, the criteria are transcribed by hand into a rule table, tested
   case by case, and given authority to overrule everything else. (On the CHOP
@@ -46,13 +76,11 @@ legal hop at a time. Four properties make the route trustworthy:
   facts, the table decides the band.)
 
 Because it reads what institutions already publish, the same code works across
-hospitals with no pathway-specific logic — it has been run on pathways from
-several institutions that each draw their flowcharts differently. Pathways are
-published either as PDFs or as web pages, and both are supported: a PDF is
-rendered to canvas; an HTML pathway is re-rendered from the institution's own
-(sanitised) markup. Either way the route lands on the real boxes. Where a reading
-is uncertain, the viewer carries a "how this was read" note listing what the
-extractor could not resolve.
+hospitals with no pathway-specific logic. Pathways are published either as PDFs or
+as web pages, and both are supported: a PDF is rendered to canvas; an HTML pathway
+is re-rendered from the institution's own (sanitised) markup. Either way the route
+lands on the real boxes. Where a reading is uncertain, the viewer carries a "how
+this was read" note listing anything the extractor could not resolve.
 
 ## Getting started
 
@@ -119,7 +147,8 @@ Point it at any institution that publishes pathways openly. A few to start with:
 
 - **Not medical advice, and not triage.** This is a reference tool for navigating
   an approved document. It does not replace clinical judgement; verify every step
-  against the document itself.
+  against the document itself. Its purpose is to make the reasoning visible, not to
+  make the decision for you.
 - **No patient data.** No EHR integration and no PHI — a clinician types what they
   know, and questions aren't stored (the audit log keeps only a hash, the graph
   version, and the node sequence). This deliberate scope choice keeps it a
