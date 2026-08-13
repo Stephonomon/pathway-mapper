@@ -43,6 +43,7 @@ const graph = (nodes: PathwayNode[]): PathwayGraph => ({
   warnings: [],
   decisions: null,
   compiledAt: null,
+  examples: [],
   source: { kind: 'pdf' as const, html: null, url: null },
 });
 

@@ -125,6 +125,7 @@ export function buildUnlabeledGraph(
     labeledAt: null,
     decisions: null,
     compiledAt: null,
+    examples: [],
     source: options.source ?? { kind: 'pdf', html: null, url: null },
     warnings: graphs.flatMap((g) =>
       g.unresolvedArrowheads > 0

@@ -96,27 +96,9 @@ export const forkSchema = z.object({
 });
 export type Fork = z.infer<typeof forkSchema>;
 
-/**
- * Worked examples for the question box, written once per pathway at compile time.
- *
- * These used to be a hardcoded list, which meant a suicide-risk vignette appeared
- * on an infant apnoea pathway. Generating them per document is the only version
- * of this that survives a library of a hundred pathways.
- */
-export const pathwayExampleSchema = z.object({
-  label: z.string().describe('Two or three words for a chip, e.g. "Recent attempt"'),
-  hint: z.string().describe('One line on what this case demonstrates'),
-  text: z.string().describe('A realistic one or two sentence case description a clinician might type'),
-});
-export type PathwayExample = z.infer<typeof pathwayExampleSchema>;
-
 export const decisionModelSchema = z.object({
   dataItems: z.array(dataItemSchema),
   forks: z.array(forkSchema),
-  examples: z
-    .array(pathwayExampleSchema)
-    .describe('Four to six starter cases spanning this pathway\'s distinct outcomes')
-    .default([]),
 });
 export type DecisionModel = z.infer<typeof decisionModelSchema>;
 

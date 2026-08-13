@@ -15,8 +15,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PathwayGraph, Rect, Route, RouteEvent, RouteStep } from '@/lib/schema';
-import { decisionModelSchema } from '@/lib/decisions/schema';
+import { z } from 'zod';
+import { pathwayExampleSchema, type PathwayGraph, type Rect, type Route, type RouteEvent, type RouteStep } from '@/lib/schema';
 import { detectRuleset } from '@/lib/rules/registry';
 import { OverlayLayer } from './OverlayLayer';
 import { PdfCanvas } from './PdfCanvas';
@@ -119,14 +119,16 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
   const [easeMs, setEaseMs] = useState(TOUR_EASE_MS);
 
   /**
-   * Starter cases come from the pathway's own compiled model. They were once a
-   * hardcoded list, which put suicide-risk vignettes on an infant apnoea pathway.
+   * Starter cases are generated per pathway at ingest. They were once a hardcoded
+   * list, which put suicide-risk vignettes on an infant apnoea pathway.
    */
   const examples = useMemo(() => {
-    if (!graph.decisions) return [];
-    const parsed = decisionModelSchema.safeParse(graph.decisions);
-    return parsed.success ? parsed.data.examples : [];
-  }, [graph.decisions]);
+    if (graph.examples?.length) return graph.examples;
+    // Back-compat: graphs ingested before this moved to a dedicated step kept the
+    // starter cases inside the decision model.
+    const legacy = z.object({ examples: z.array(pathwayExampleSchema) }).safeParse(graph.decisions);
+    return legacy.success ? legacy.data.examples : [];
+  }, [graph.examples, graph.decisions]);
 
   /**
    * Crisis resources belong on a pathway about suicide risk and nowhere else.

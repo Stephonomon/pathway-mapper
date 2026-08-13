@@ -109,6 +109,18 @@ export const pathwaySourceSchema = z.object({
   url: z.string().nullable().default(null),
 });
 
+/**
+ * Worked starter cases for the question box, written once per pathway at ingest.
+ * They are a UI affordance, generated independently of the decision table so a
+ * pathway still gets them when compilation is thin or fails.
+ */
+export const pathwayExampleSchema = z.object({
+  label: z.string().describe('Two or three words for a chip, e.g. "Recent attempt"'),
+  hint: z.string().describe('One line on what this case demonstrates'),
+  text: z.string().describe('A realistic one or two sentence case description a clinician might type'),
+});
+export type PathwayExample = z.infer<typeof pathwayExampleSchema>;
+
 export const pathwayGraphSchema = z.object({
   docId: z.string(),
   title: z.string(),
@@ -122,6 +134,8 @@ export const pathwayGraphSchema = z.object({
   labeledAt: z.string().nullable(),
   /** Non-fatal problems worth showing in the review UI. */
   warnings: z.array(z.string()),
+  /** Starter cases shown as one-click chips in the question box. */
+  examples: z.array(pathwayExampleSchema).default([]),
   /**
    * The precomputed decision table. Null when compilation was skipped or failed;
    * routing then falls back to asking the model at every fork.

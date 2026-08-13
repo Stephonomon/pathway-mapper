@@ -13,6 +13,7 @@ import { inferGraph, type CandidateGraph } from './pdf/infer';
 import { extractHtmlPathway } from './html/extract';
 import { buildUnlabeledGraph, labelGraph, type LabelOptions } from './llm/label';
 import { compileDecisionModel } from './decisions/compile';
+import { generateExamples } from './llm/examples';
 import { writeGraph, writeSource } from './store';
 import type { PathwayGraph } from './schema';
 
@@ -101,6 +102,13 @@ export async function ingestDocument(
   }
 
   if (labeled) {
+    // Starter cases run alongside compilation and independently of it — a fresh
+    // upload should still get questions to try even if the decision table fails.
+    const examplesPromise = generateExamples(graph).catch((err) => {
+      graph.warnings.push(`sample questions were not generated: ${(err as Error).message}`);
+      return [] as PathwayGraph['examples'];
+    });
+
     try {
       const { model, warnings } = await compileDecisionModel(graph);
       graph.decisions = model;
@@ -113,6 +121,9 @@ export async function ingestDocument(
     } catch (err) {
       graph.warnings.push(`decision compilation failed: ${(err as Error).message}`);
     }
+
+    graph.examples = await examplesPromise;
+    progress(`generated ${graph.examples.length} sample questions`);
   }
 
   return { graph: await writeGraph(graph), labeled };

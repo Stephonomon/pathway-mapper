@@ -24,8 +24,6 @@ Produce two things:
 
 2. FORKS: for each fork, criteria for proceeding — rules mapping facts to one outgoing edge. A rule is a conjunction: every clause must hold for it to fire. To express "A or B selects this edge", write two rules for the same edge.
 
-3. EXAMPLES: four to six realistic starter cases a clinician might type, spanning this pathway's distinct outcomes — including at least one that is deliberately underspecified so the router has to ask. Write them in the register a clinician actually uses. These are shown as one-click chips in the question box, so they must be about THIS pathway's subject matter and nothing else.
-
 Rules you must follow:
 - Only write a rule when the document states the criteria. Do not encode clinical knowledge the document does not print.
 - If a fork is a clinician judgement call that the document does not determine — no printed criteria, the choice depends on an assessment the narrative cannot contain — set judgementCall: true, give it no rules, and fill in judgementQuestion plus one judgementOption per outgoing edge. This is a correct and expected answer. It is much better than inventing criteria. Write the question the way a colleague would ask it, and phrase each option as the clinical action that branch represents.
@@ -155,7 +153,7 @@ function validate(graph: PathwayGraph, model: DecisionModel): CompileResult {
     return [{ ...fork, rules, judgementCall, judgementOptions }];
   });
 
-  return { model: { dataItems, forks, examples: model.examples ?? [] }, warnings };
+  return { model: { dataItems, forks }, warnings };
 }
 
 export async function compileDecisionModel(graph: PathwayGraph): Promise<CompileResult> {
