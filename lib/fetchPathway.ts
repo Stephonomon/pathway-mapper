@@ -8,9 +8,14 @@
  *   HTML pathway   chop.edu/clinical-pathway/… — the page *is* the flowchart,
  *                  drawn as positioned markup, with no PDF anywhere
  *
- * A linked PDF wins over the page's own markup when both exist: it is the
- * authoritative artifact. Candidate links are scored so the algorithm beats the
- * patient-education material most pathway pages also publish.
+ * A linked PDF wins over the page's own markup only when it is hosted on the same
+ * site as the page: that is the institution's own authoritative artifact.
+ * Pathway pages routinely *cite* third-party PDFs (an NHLBI guideline, a journal
+ * article), and following one of those would silently ingest the wrong document,
+ * so an off-site PDF never overrides a page that is itself a readable pathway —
+ * it is only a last resort for a page that has no markup of its own. Candidate
+ * links are scored so the algorithm beats the patient-education material most
+ * pathway pages also publish.
  *
  * This endpoint takes a URL from the user and fetches it server-side, which is a
  * request-forgery surface. The guards below are deliberately strict: HTTPS only,
@@ -28,6 +33,27 @@ const USER_AGENT = 'PathwayMapper/0.1 (clinical pathway reader)';
 
 /** Cheap check for a page that renders its pathway as markup rather than a PDF. */
 const PATHWAY_MARKUP = /class=["'][^"']*\bpathway\b/i;
+
+/** True when the page renders its own pathway diagram as positioned markup. */
+export function hasPathwayMarkup(html: string): boolean {
+  return PATHWAY_MARKUP.test(html);
+}
+
+/**
+ * The registrable domain, approximated as the last two labels. Good enough to
+ * tell `nhlbi.nih.gov` from `chop.edu`, and to treat `media.chop.edu` and
+ * `www.chop.edu` as the same site. It over-groups two-label public suffixes such
+ * as `.nhs.uk`, which is acceptable here — the cost of a wrong grouping is only
+ * that an off-site PDF is treated as on-site, and the scorer still has to like it.
+ */
+export function registrableDomain(hostname: string): string {
+  return hostname.toLowerCase().split('.').filter(Boolean).slice(-2).join('.');
+}
+
+/** Same institution's site — a PDF here is the authoritative artifact, not a citation. */
+export function isSameSite(a: URL, b: URL): boolean {
+  return registrableDomain(a.hostname) === registrableDomain(b.hostname);
+}
 
 export class FetchPathwayError extends Error {}
 
@@ -271,53 +297,61 @@ export async function fetchPathwayDocument(input: string): Promise<FetchedDocume
 
   const html = new TextDecoder('utf-8', { fatal: false }).decode(first.body);
 
-  // Prefer a linked PDF when there is one — it is the authoritative artifact.
-  // Otherwise the page may *be* the pathway, rendered as positioned HTML.
+  const markup = hasPathwayMarkup(html);
+  const asHtml = (): FetchedHtml => ({
+    kind: 'html',
+    html,
+    sourceUrl: first.url.toString(),
+    filename: filenameFor(first.url).replace(/\.pdf$/, ''),
+  });
+
+  // Split candidates by host. A same-site PDF is the institution's own artifact
+  // and outranks the page's markup; an off-site one is a citation and must not.
   const candidates = findPdfLinks(html, first.url);
-  if (candidates.length === 0) {
-    if (PATHWAY_MARKUP.test(html)) {
-      return {
-        kind: 'html',
-        html,
-        sourceUrl: first.url.toString(),
-        filename: filenameFor(first.url).replace(/\.pdf$/, ''),
-      };
+  const sameSite = candidates.filter((c) => isSameSite(new URL(c), first.url));
+  const offSite = candidates.filter((c) => !isSameSite(new URL(c), first.url));
+
+  const errors: string[] = [];
+  const tryCandidates = async (urls: string[]): Promise<FetchedPathway | null> => {
+    // Try the best few in order — the top-scoring link is occasionally a dead or
+    // non-PDF URL, and falling through beats failing the whole ingest.
+    for (const candidate of urls.slice(0, 3)) {
+      try {
+        const resource = await fetchChecked(candidate);
+        if (looksLikePdf(resource.body, resource.contentType)) {
+          return {
+            kind: 'pdf',
+            bytes: resource.body,
+            sourceUrl: resource.url.toString(),
+            filename: filenameFor(resource.url),
+          };
+        }
+        errors.push(`${candidate} was not a PDF`);
+      } catch (err) {
+        errors.push((err as Error).message);
+      }
     }
+    return null;
+  };
+
+  // 1. The institution's own PDF, if it links one.
+  const own = await tryCandidates(sameSite);
+  if (own) return own;
+
+  // 2. The page is itself the pathway — read it rather than follow a citation.
+  if (markup) return asHtml();
+
+  // 3. No markup and no same-site PDF: a page that only links out to the real
+  //    document (an off-site PDF) is the remaining possibility.
+  const external = await tryCandidates(offSite);
+  if (external) return external;
+
+  if (candidates.length === 0) {
     throw new FetchPathwayError(
       'That page has neither a linked PDF nor a pathway diagram this can read.',
     );
   }
-
-  // Try the best candidates in order — the top-scoring link is occasionally a
-  // dead or non-PDF URL, and falling through beats failing the whole ingest.
-  const errors: string[] = [];
-  for (const candidate of candidates.slice(0, 3)) {
-    try {
-      const resource = await fetchChecked(candidate);
-      if (looksLikePdf(resource.body, resource.contentType)) {
-        return {
-          kind: 'pdf',
-          bytes: resource.body,
-          sourceUrl: resource.url.toString(),
-          filename: filenameFor(resource.url),
-        };
-      }
-      errors.push(`${candidate} was not a PDF`);
-    } catch (err) {
-      errors.push((err as Error).message);
-    }
-  }
-
-  if (PATHWAY_MARKUP.test(html)) {
-    return {
-      kind: 'html',
-      html,
-      sourceUrl: first.url.toString(),
-      filename: filenameFor(first.url).replace(/\.pdf$/, ''),
-    };
-  }
-
   throw new FetchPathwayError(
-    `Found ${candidates.length} PDF link(s) on that page but could not fetch one: ${errors[0]}`,
+    `Found ${candidates.length} PDF link(s) on that page but could not fetch a usable one: ${errors[0]}`,
   );
 }

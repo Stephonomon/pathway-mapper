@@ -20,6 +20,15 @@ interface IngestResult {
   warnings: string[];
   labeled: boolean;
   sourceUrl: string | null;
+  kind: 'pdf' | 'html';
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }
 
 type Mode = 'url' | 'file';
@@ -141,6 +150,12 @@ export function UploadForm() {
             <strong>{result.title}</strong>: {result.nodes} steps, {result.edges} connections
             {result.labeled ? '' : ' (geometry only — labeling did not run)'}
           </p>
+          {result.sourceUrl && (
+            <p className="mt-1 text-emerald-800">
+              Read the {result.kind === 'html' ? 'web page' : 'PDF'} from{' '}
+              <strong>{hostOf(result.sourceUrl)}</strong>
+            </p>
+          )}
           {result.warnings.length > 0 && (
             <p className="mt-1 text-amber-900">
               {result.warnings.length} note{result.warnings.length === 1 ? '' : 's'} about how it was
