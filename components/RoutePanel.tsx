@@ -27,7 +27,7 @@ export function RoutePanel({ graph, steps, activeIndex, route, onSelect }: Route
 
   if (steps.length === 0) {
     return (
-      <div className="rounded-lg border border-[var(--line)] bg-white p-4 text-sm text-[var(--muted)]">
+      <div className="card p-4 text-sm text-[var(--muted)]">
         Describe the patient above and the pathway will be traced step by step on the document.
       </div>
     );
@@ -36,13 +36,13 @@ export function RoutePanel({ graph, steps, activeIndex, route, onSelect }: Route
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between px-1">
-        <h2 className="text-sm font-semibold">Route</h2>
-        <div className="flex gap-1">
+        <h2 className="eyebrow">Route</h2>
+        <div className="flex gap-1.5">
           <button
             type="button"
             onClick={() => onSelect(Math.max(0, activeIndex - 1))}
             disabled={activeIndex <= 0}
-            className="rounded border border-[var(--line)] px-2 py-1 text-xs disabled:opacity-40"
+            className="btn-ghost"
           >
             ← Prev
           </button>
@@ -50,7 +50,7 @@ export function RoutePanel({ graph, steps, activeIndex, route, onSelect }: Route
             type="button"
             onClick={() => onSelect(Math.min(steps.length - 1, activeIndex + 1))}
             disabled={activeIndex >= steps.length - 1}
-            className="rounded border border-[var(--line)] px-2 py-1 text-xs disabled:opacity-40"
+            className="btn-ghost"
           >
             Next →
           </button>
@@ -67,10 +67,10 @@ export function RoutePanel({ graph, steps, activeIndex, route, onSelect }: Route
               <button
                 type="button"
                 onClick={() => onSelect(i)}
-                className={`w-full rounded-lg border p-3 text-left transition ${
+                className={`w-full rounded-[var(--r)] border p-3 text-left transition-all ${
                   isActive
-                    ? 'border-[var(--accent)] bg-white shadow-sm'
-                    : 'border-[var(--line)] bg-white/60 hover:bg-white'
+                    ? 'border-[var(--accent)] bg-[var(--panel)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--accent-weak)]'
+                    : 'border-[var(--line)] bg-[var(--panel)]/60 hover:border-[var(--line-strong)] hover:bg-[var(--panel)]'
                 }`}
               >
                 <div className="flex items-start gap-2">

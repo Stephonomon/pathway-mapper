@@ -54,9 +54,9 @@ export function UploadForm() {
       key={value}
       type="button"
       onClick={() => setMode(value)}
-      className={`rounded-t border-b-2 px-3 py-1.5 text-xs font-medium transition ${
+      className={`-mb-px border-b-2 px-1 pb-2 text-xs font-medium transition-colors ${
         mode === value
-          ? 'border-[var(--accent)] text-[var(--accent)]'
+          ? 'border-[var(--accent)] text-[var(--ink)]'
           : 'border-transparent text-[var(--muted)] hover:text-[var(--ink)]'
       }`}
     >
@@ -65,8 +65,8 @@ export function UploadForm() {
   );
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-1 border-b border-[var(--line)]">
+    <div className="space-y-4">
+      <div className="flex gap-5 border-b border-[var(--line)]">
         {tab('url', 'From a link')}
         {tab('file', 'From a file')}
       </div>
@@ -89,17 +89,13 @@ export function UploadForm() {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://www.example.org/clinical-pathway/…"
               required
-              className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+              className="field min-w-0 flex-1"
             />
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
+            <button type="submit" disabled={busy} className="btn-primary shrink-0">
               {busy ? 'Reading…' : 'Read pathway'}
             </button>
           </div>
-          <p className="text-xs text-[var(--muted)]">
+          <p className="text-xs text-[var(--faint)]">
             Paste a link to the pathway PDF, or to the page it sits on — the PDF will be found
             for you.
           </p>
@@ -119,13 +115,9 @@ export function UploadForm() {
             name="file"
             accept="application/pdf"
             required
-            className="text-sm file:mr-3 file:rounded file:border file:border-[var(--line)] file:bg-white file:px-3 file:py-1.5 file:text-sm"
+            className="flex-1 text-sm text-[var(--muted)] file:mr-3 file:rounded-[var(--r-sm)] file:border file:border-[var(--line-strong)] file:bg-[var(--panel)] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-[var(--ink)] hover:file:bg-[var(--surface)]"
           />
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-          >
+          <button type="submit" disabled={busy} className="btn-primary shrink-0">
             {busy ? 'Reading…' : 'Read pathway'}
           </button>
         </form>
@@ -138,11 +130,13 @@ export function UploadForm() {
       )}
 
       {error && (
-        <p className="rounded border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">{error}</p>
+        <p className="rounded-[var(--r)] border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+          {error}
+        </p>
       )}
 
       {result && (
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900">
+        <div className="rounded-[var(--r)] border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
           <p>
             <strong>{result.title}</strong>: {result.nodes} steps, {result.edges} connections
             {result.labeled ? '' : ' (geometry only — labeling did not run)'}

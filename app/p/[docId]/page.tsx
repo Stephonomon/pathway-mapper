@@ -12,13 +12,17 @@ export default async function ViewerPage({ params }: { params: Promise<{ docId: 
 
   return (
     <main className="min-h-screen">
-      <header className="flex flex-wrap items-baseline gap-3 border-b border-[var(--line)] bg-white px-4 py-3">
-        <Link href="/" className="text-xs text-[var(--muted)] hover:underline">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-[var(--line)] bg-white/85 px-5 py-3 backdrop-blur-sm">
+        <Link
+          href="/"
+          className="text-xs font-medium text-[var(--muted)] transition-colors hover:text-[var(--ink)]"
+        >
           ← Pathways
         </Link>
+        <span className="h-3.5 w-px bg-[var(--line-strong)]" aria-hidden />
         <h1 className="text-sm font-semibold">{graph.title}</h1>
-        <span className="ml-auto text-xs text-[var(--muted)]">
-          {graph.nodes.length} steps · read automatically from the document
+        <span className="ml-auto font-[family-name:var(--font-mono)] text-xs text-[var(--faint)]">
+          {graph.nodes.length} steps · read automatically
         </span>
       </header>
 

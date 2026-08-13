@@ -400,12 +400,12 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
                 ? `Describe the patient, e.g. “${examples[0].text.slice(0, 90)}…”`
                 : 'Describe the patient and the question in plain language'
             }
-            className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+            className="field min-w-0 flex-1"
           />
           <button
             type="submit"
             disabled={pending || question.trim().length === 0}
-            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="btn-primary shrink-0"
           >
             {pending ? 'Routing…' : 'Route'}
           </button>
@@ -413,7 +413,7 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
 
         {examples.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-[var(--muted)]">Try:</span>
+          <span className="eyebrow mr-0.5">Try</span>
           {examples.map((sample) => (
             <button
               key={sample.label}
@@ -425,7 +425,7 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
                 setAnswers([]);
                 void ask(sample.text, []);
               }}
-              className="rounded-full border border-[var(--line)] bg-white px-2.5 py-1 text-[11px] text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
+              className="rounded-full border border-[var(--line-strong)] bg-[var(--panel)] px-3 py-1 text-xs text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-weak)] hover:text-[var(--accent-ink)] disabled:opacity-40"
             >
               {sample.label}
             </button>
@@ -435,7 +435,7 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
 
         <div
           ref={stageRef}
-          className="relative h-[74vh] overflow-hidden rounded-lg border border-[var(--line)] bg-white"
+          className="relative h-[74vh] overflow-hidden rounded-[var(--r-lg)] border border-[var(--line)] bg-[var(--panel)] shadow-[var(--shadow-xs)]"
         >
           <div
             className="absolute left-0 top-0 origin-top-left"
@@ -547,21 +547,21 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
         )}
 
         {clarify && (
-          <div className="rounded-lg border border-[var(--accent)] bg-white p-3">
+          <div className="rounded-[var(--r)] border border-[var(--accent)] bg-[var(--panel)] p-3 shadow-[var(--shadow-sm)] ring-1 ring-[var(--accent-weak)]">
             <p className="text-sm font-medium">{clarify.text}</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
               {clarify.options.map((option) => (
                 <button
                   key={option}
                   type="button"
                   onClick={() => submitAnswer(option)}
-                  className="rounded border border-[var(--line)] px-2 py-1 text-xs hover:bg-slate-50"
+                  className="btn-ghost"
                 >
                   {option}
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-[11px] text-[var(--muted)]">
+            <p className="mt-2.5 text-[11px] text-[var(--muted)]">
               The pathway needs this before it can place the patient. Answering resumes the route.
             </p>
           </div>
@@ -583,7 +583,7 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
 
 function SafetyFooter({ showCrisisResources }: { showCrisisResources: boolean }) {
   return (
-    <div className="space-y-2 rounded-lg border border-[var(--line)] bg-white p-3 text-[11px] leading-snug text-[var(--muted)]">
+    <div className="card space-y-2 p-3 text-[11px] leading-snug text-[var(--muted)]">
       <p>
         <strong className="text-[var(--ink)]">Decision support, not triage.</strong> This tool
         navigates an approved clinical pathway document. It does not provide medical advice and does
