@@ -16,47 +16,52 @@ is drawn on the source.
 
 ## Why this exists
 
-A clinical pathway is not an answer key. It is a piece of *reasoning* — laid out
-step by step, the product of enormous committee effort, so a clinician can follow
-the logic from presentation to disposition. That stepwise structure is the whole
-point: it shows which factors matter, in what order, and where the decision could
-reasonably go a different way.
+Clinical pathways are built to guide **diagnostic and process reasoning** in a
+stepwise, methodical way. The step-by-step structure is not incidental — it *is*
+the pathway. It shows which factors matter, in what order, and where a decision
+could reasonably go another way.
 
-Those pathways are genuinely good, and also hard to use at the moment of care: you
-have to find the right one and trace the right line through it while holding a
-specific patient in your head. The obvious thing to do with an LLM is to remove
-that friction by collapsing the pathway into a question-and-answer box — type the
-patient, get the recommended step. It works. It also throws away the most valuable
-part.
+There is growing interest in pointing an LLM at these documents so a user can type
+a question and get an answer directly. The problem is what that loses: **the
+step-by-step process and reasoning the model used to reach the answer.** If you put
+a pathway straight into an LLM, it can certainly attempt to answer — but you have
+no true indication that it actually *followed the reasoning steps in the pathway*
+to get there. And asking the model to "show its work" after the fact doesn't
+settle it, because a fluent model can narrate a plausible account that isn't what
+actually drove the answer.
 
-**What gets lost is the work.** The user is handed a destination with no route.
-They can't see *how* the answer was reached, which factors drove it, or whether a
-different, equally defensible path was available. And when the answer is one they
-might disagree with, they have no view of where they would have turned off. Asking
-the model to "show its work" after the fact doesn't fix this — a fluent model will
-narrate a plausible-sounding rationale that may not be what actually produced the
-answer.
+This project is a mock-up of a way to **show those reasoning steps** — a visual,
+turn-by-turn trace through the pathway, with the factor behind each decision
+surfaced alongside it, so a user can see not just the recommendation but the
+factors that led to it. That matters most when a user disagrees: to override the
+algorithm sensibly, they need to see where it turned, and what other turn was on
+offer.
 
-**Think of navigation software.** If it only ever told you the destination, you
-would have no way to judge whether the route was sensible, no view of the
-alternatives, and no ability to say *"not that way — take this road instead."* The
-route is what earns your trust. Seeing it turn by turn is what lets you follow it,
-question it, and override it.
+**The inspiration is navigation software.** If you are only ever given the
+destination, you have no way to judge whether the route was efficient, and no
+awareness of the alternative routes you might take instead. You are left unable to
+question the route, and unaware of the other paths you could choose if you wanted
+to override it. Showing the route, turn by turn, is what lets a user follow it,
+question it, and knowingly go a different way.
 
-Pathway Mapper applies that idea to clinical pathways. Instead of collapsing the
-pathway into an answer, it draws the **route**: each decision lit in order on the
-original document, the factor behind each turn shown beside it, and the branch
-points where the clinician could reasonably choose to go another way left visible.
-The document stays the source of truth, and the reasoning stays inspectable —
-because the route you see *is* the computation, validated step by step against the
-document, not a story told about it afterwards.
+Crucially, this provides that transparency **without destroying the source
+document.** The pathway is not flattened into rules or absorbed into a model; it
+stays intact and on screen, and the same reader works across different pathways
+because it reads what institutions already publish rather than a re-encoding of it.
+
+That fidelity is becoming a practical concern. As organisations move to bring their
+local pathways into LLM-based clinical decision support — embedded in the EHR or
+alongside it — the worry is losing exactly what the pathway was for: the reasoning
+steps that illustrate *why* a decision is made, not just *what* it is. Keeping the
+route visible, and anchored to the original document, is one way to bring pathways
+into these systems without giving that up.
 
 ## How it works
 
 The document is read the way a person reads a flowchart — boxes, arrows, and the
 words inside them — into a graph. A question is then routed through that graph one
-legal hop at a time. Four properties are what make the visible reasoning
-trustworthy rather than decorative:
+legal hop at a time. Four properties are what let you trust that the route reflects
+the pathway's own reasoning, and not the model's improvisation:
 
 - **It cannot invent a step.** Routing may only follow arrows measured off the
   page; every hop is validated against the real graph. A route is by construction
