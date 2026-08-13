@@ -12,6 +12,7 @@
  */
 
 import type { PathwayEdge, PathwayGraph, PathwayNode } from '@/lib/schema';
+import { routeEdgePoints, type Point } from '@/lib/route/orthogonal';
 
 const ACUITY_COLORS: Record<string, string> = {
   low: '#2e7d32',
@@ -40,14 +41,19 @@ function haloColor(node: PathwayNode): string {
   return (node.acuity && ACUITY_COLORS[node.acuity]) || DEFAULT_ROUTE_COLOR;
 }
 
-function edgePath(edge: PathwayEdge, from: PathwayNode, to: PathwayNode): string {
-  if (edge.polyline.length >= 2) {
-    return edge.polyline.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
-  }
-  // Model-added edges carry no geometry; draw a straight run between box centres.
-  const a = [from.bbox.x + from.bbox.w / 2, from.bbox.y + from.bbox.h / 2];
-  const b = [to.bbox.x + to.bbox.w / 2, to.bbox.y + to.bbox.h / 2];
-  return `M${a[0]},${a[1]} L${b[0]},${b[1]}`;
+/**
+ * The points a route segment is drawn with. A real traced connector (3+ points
+ * with genuine bends) is used verbatim; a straight stub or a geometry-less
+ * model-added edge is replaced with a synthesised right-angle route between the
+ * boxes, so the highlight follows the document's flowchart style rather than
+ * cutting a diagonal across the page.
+ */
+function edgePoints(edge: PathwayEdge, from: PathwayNode, to: PathwayNode): Point[] {
+  return routeEdgePoints(edge.polyline, from.bbox, to.bbox);
+}
+
+function toPath(points: Point[]): string {
+  return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
 }
 
 export function OverlayLayer({
@@ -122,29 +128,34 @@ export function OverlayLayer({
         const to = nodes.get(edge.to);
         if (!from || !to) return null;
         const color = haloColor(to);
+        const points = edgePoints(edge, from, to);
+        const d = toPath(points);
+        // Mark the arrowhead where the drawn line actually ends, so the dot sits
+        // on a synthesised path rather than at a stale extracted tip.
+        const tip = points[points.length - 1];
         return (
           <g key={edgeId}>
             <path
-              d={edgePath(edge, from, to)}
+              d={d}
               fill="none"
               stroke="#ffffff"
               strokeWidth="3.2"
               strokeLinecap="round"
+              strokeLinejoin="round"
               opacity="0.9"
             />
             <path
               className="route-trace"
               style={{ animationDelay: `${i * 90}ms` }}
               pathLength={1}
-              d={edgePath(edge, from, to)}
+              d={d}
               fill="none"
               stroke={color}
               strokeWidth="1.8"
               strokeLinecap="round"
+              strokeLinejoin="round"
             />
-            {edge.arrowAt && (
-              <circle cx={edge.arrowAt[0]} cy={edge.arrowAt[1]} r="2.2" fill={color} />
-            )}
+            {tip && <circle cx={tip[0]} cy={tip[1]} r="2.2" fill={color} />}
           </g>
         );
       })}
