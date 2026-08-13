@@ -106,6 +106,10 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
   const [question, setQuestion] = useState('');
   const [pending, setPending] = useState(false);
   const [steps, setSteps] = useState<RouteStep[]>([]);
+  // Current steps, read inside the streaming callback without a stale closure —
+  // used to keep the shared prefix on screen when answering a clarifying question.
+  const stepsRef = useRef<RouteStep[]>([]);
+  stepsRef.current = steps;
   const [route, setRoute] = useState<Route | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [answers, setAnswers] = useState<{ question: string; answer: string }[]>([]);
@@ -299,16 +303,29 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
   }, [steps.length]);
 
   const ask = useCallback(
-    async (text: string, currentAnswers: { question: string; answer: string }[]) => {
+    async (
+      text: string,
+      currentAnswers: { question: string; answer: string }[],
+      opts: { resume?: boolean } = {},
+    ) => {
+      // Answering a clarifying question re-walks the same route from the start —
+      // deterministically, so the steps already on screen are an exact prefix.
+      // In resume mode we keep them, and only reveal and tour what is new, rather
+      // than clearing the document and zooming back out on every answer.
+      const resume = opts.resume ?? false;
+      const prefixLen = resume ? stepsRef.current.length : 0;
+
       setPending(true);
       setError(null);
       setClarify(null);
-      setSteps([]);
-      setRoute(null);
-      setActiveIndex(0);
       setPlaying(false);
-      setPhase('routing');
-      fitPage();
+      if (!resume) {
+        setSteps([]);
+        setRoute(null);
+        setActiveIndex(0);
+        setPhase('routing');
+        fitPage();
+      }
 
       try {
         const response = await fetch('/api/route', {
@@ -324,6 +341,8 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
         const decoder = new TextDecoder();
         let buffer = '';
         let arrived = 0;
+        let firstNewIndex = -1;
+        let asked = false;
 
         // Newline-delimited JSON: each hop lands as the server decides it.
         for (;;) {
@@ -340,10 +359,16 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
 
             const event = JSON.parse(line) as RouteEvent;
             if (event.type === 'step') {
+              const idx = arrived;
               arrived += 1;
+              // In resume mode the shared prefix is already on screen — leave it,
+              // and don't move the camera until the first genuinely new step.
+              if (resume && idx < prefixLen) continue;
+              if (resume && firstNewIndex < 0) firstNewIndex = idx;
               setSteps((prev) => [...prev, event.step]);
-              setActiveIndex(arrived - 1);
+              if (!resume) setActiveIndex(idx);
             } else if (event.type === 'question') {
+              asked = true;
               setClarify(event.question);
             } else if (event.type === 'done') {
               setRoute(event.route);
@@ -353,8 +378,20 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
           }
         }
 
-        // Route found — now walk the user through it.
-        if (arrived > 1) {
+        if (resume) {
+          if (firstNewIndex >= 0) {
+            // Tour only the newly-added segment, continuing from where we stopped.
+            setPhase('touring');
+            setActiveIndex(firstNewIndex);
+            setPlaying(true);
+          } else if (asked && arrived > 0) {
+            // The answer surfaced another question without advancing — focus the
+            // fork it is about rather than drifting back over the prefix.
+            setPhase('touring');
+            setActiveIndex(arrived - 1);
+            setPlaying(false);
+          }
+        } else if (arrived > 1) {
           setPhase('touring');
           setActiveIndex(0);
           setPlaying(true);
@@ -363,7 +400,7 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
-        setPhase('idle');
+        if (!resume) setPhase('idle');
       } finally {
         setPending(false);
       }
@@ -376,7 +413,7 @@ export function PathwayViewer({ graph: stored }: PathwayViewerProps) {
       if (!clarify) return;
       const next = [...answers, { question: clarify.text, answer }];
       setAnswers(next);
-      void ask(question, next);
+      void ask(question, next, { resume: true });
     },
     [answers, ask, clarify, question],
   );
