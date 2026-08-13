@@ -128,3 +128,48 @@ describe('fragment sanitisation', () => {
     expect(result!.fragment).toContain('rel="noopener noreferrer nofollow"');
   });
 });
+
+describe('sanitisation: URL scheme evasion', () => {
+  // A browser ignores tab/newline/control characters inside a URL scheme, so
+  // these all execute as javascript: despite not being the literal string.
+  const evasions = [
+    ['tab', 'jav&#9;ascript:alert(1)'],
+    ['newline', 'jav&#10;ascript:alert(1)'],
+    ['leading control', '&#1;javascript:alert(1)'],
+  ] as const;
+
+  for (const [label, href] of evasions) {
+    it(`strips a ${label}-obfuscated javascript: URL`, () => {
+      const html = `<div class="pathway"><div class="outline" style="position:absolute; top:0; left:0; width:200px; height:20px;">step</div><a href="${href}">x</a></div>`;
+      const out = extractHtmlPathway(html, BASE);
+      // No href survives on the anchor at all, so there is nothing to activate.
+      expect(out!.fragment).not.toMatch(/href=/i);
+    });
+  }
+
+  it('keeps ordinary http links', () => {
+    const html = `<div class="pathway"><div class="outline" style="position:absolute; top:0; left:0; width:200px; height:20px;">step</div><a href="https://example.org/ok">x</a></div>`;
+    const out = extractHtmlPathway(html, BASE);
+    expect(out!.fragment).toContain('https://example.org/ok');
+  });
+});
+
+describe('sanitisation: layout and beacons', () => {
+  const html = `<div class="pathway">
+    <div class="outline" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:url(https://evil.example/beacon)">overlay</div>
+    <img src="https://example.org/logo.png" srcset="https://evil.example/track 1x">
+  </div>`;
+  const out = extractHtmlPathway(html, BASE);
+
+  it('removes position:fixed so content cannot escape the shadow root', () => {
+    expect(out!.fragment).not.toMatch(/position:\s*fixed/i);
+  });
+
+  it('removes url() references that would beacon from our origin', () => {
+    expect(out!.fragment).not.toMatch(/url\(/i);
+  });
+
+  it('drops srcset image beacons', () => {
+    expect(out!.fragment).not.toMatch(/srcset/i);
+  });
+});

@@ -140,22 +140,82 @@ function arrowDirection(classes: string[]): [number, number] | null {
   }
 }
 
+/** URL schemes a stored fragment may keep. Everything else is stripped. */
+const ALLOWED_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+
+/**
+ * The scheme a browser would act on, read the way a browser reads it: ASCII
+ * whitespace and C0 control characters are ignored inside a scheme, so
+ * `jav&#9;ascript:` (a literal tab after the parser decodes the entity) resolves
+ * to `javascript:`. Blocklisting the exact string `javascript:` misses that;
+ * this collapses those characters first, then matches the scheme.
+ */
+function schemeOf(rawValue: string): string | null {
+  const collapsed = rawValue.replace(/[\u0000-\u0020]+/g, '');
+  const match = /^([a-z][a-z0-9+.-]*):/i.exec(collapsed);
+  return match ? match[1].toLowerCase() : null;
+}
+
+/** True for a URL value safe to keep on `name`. Relative/anchor URLs have no scheme. */
+function urlAttrAllowed(name: string, value: string): boolean {
+  const scheme = schemeOf(value);
+  if (scheme === null) return true; // relative or fragment — already absolutised earlier
+  if (ALLOWED_SCHEMES.has(scheme)) return true;
+  // A base64/inline image is inert in an <img src>; anywhere else, data: is a
+  // navigation/scripting vector, so it goes.
+  return name.toLowerCase() === 'src' && /^data:image\//i.test(value.replace(/[\u0000-\u0020]+/g, ''));
+}
+
+/**
+ * Drop inline-style declarations that reach outside the box we render: `position:
+ * fixed`/`sticky` escape the shadow root to the viewport (an overlay/clickjack
+ * surface), and any `url(...)` is an outbound request from our origin. The
+ * pathway's own `position: absolute; top/left` layout is untouched.
+ */
+function sanitizeStyle(el: HTMLElement): void {
+  const raw = el.getAttribute('style');
+  if (!raw) return;
+  const kept = raw
+    .split(';')
+    .map((decl) => decl.trim())
+    .filter(Boolean)
+    .filter((decl) => {
+      const colon = decl.indexOf(':');
+      if (colon === -1) return false;
+      const prop = decl.slice(0, colon).trim().toLowerCase();
+      const val = decl.slice(colon + 1).trim().toLowerCase();
+      if (prop === 'position' && /\b(fixed|sticky)\b/.test(val)) return false;
+      if (/url\s*\(/.test(val)) return false;
+      return true;
+    });
+  if (kept.length) el.setAttribute('style', kept.join('; '));
+  else el.removeAttribute('style');
+}
+
 /**
  * The fragment is third-party markup that the viewer renders inside our own
  * origin, so it is stripped before storage: no scripts, no event handlers, no
- * embedded frames, and no javascript: URLs. Links are neutered to open in a new
- * tab rather than navigate the app.
+ * embedded frames, and only an allowlist of URL schemes. Inline styles are
+ * confined and responsive-image sources dropped. Links are neutered to open in a
+ * new tab rather than navigate the app.
  */
 function sanitize(root: HTMLElement): void {
-  for (const el of root.querySelectorAll('script, style, iframe, object, embed, form, input, link, meta')) {
+  for (const el of root.querySelectorAll(
+    'script, style, iframe, object, embed, form, input, link, meta, base',
+  )) {
     el.remove();
   }
   for (const el of root.querySelectorAll('*')) {
     for (const name of Object.keys(el.attributes)) {
-      const value = el.getAttribute(name) ?? '';
-      if (/^on/i.test(name)) el.removeAttribute(name);
-      else if (/^(href|src|xlink:href)$/i.test(name) && /^\s*javascript:/i.test(value)) {
+      if (/^on/i.test(name)) {
         el.removeAttribute(name);
+      } else if (/^(srcset|imagesrcset)$/i.test(name)) {
+        // Not scheme-checked below, and only ever an image beacon here.
+        el.removeAttribute(name);
+      } else if (/^(href|src|xlink:href)$/i.test(name)) {
+        if (!urlAttrAllowed(name, el.getAttribute(name) ?? '')) el.removeAttribute(name);
+      } else if (/^style$/i.test(name)) {
+        sanitizeStyle(el);
       }
     }
   }

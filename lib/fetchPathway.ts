@@ -84,53 +84,105 @@ interface FetchedResource {
   body: Uint8Array;
 }
 
+/**
+ * Read the body while enforcing the size cap *during* the download.
+ *
+ * `content-length` is advisory — a hostile or misconfigured server can omit or
+ * understate it — so buffering the whole response before checking its length
+ * would let one stream gigabytes into memory. Stream instead and abort the
+ * moment the accumulated bytes exceed the cap.
+ */
+async function readCapped(response: Response, max: number): Promise<Uint8Array> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const buffered = new Uint8Array(await response.arrayBuffer());
+    if (buffered.byteLength > max) {
+      throw new FetchPathwayError('That file is larger than the 30MB limit.');
+    }
+    return buffered;
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      throw new FetchPathwayError('That file is larger than the 30MB limit.');
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 /** Fetch one resource, following redirects manually so each hop is re-checked. */
 async function fetchChecked(startUrl: string): Promise<FetchedResource> {
   let url = await assertPublicUrl(startUrl);
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const controller = new AbortController();
+    // The timeout covers the whole hop — connecting, headers, and streaming the
+    // body — so a server that dribbles bytes forever cannot hold the request open.
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    let response: Response;
     try {
-      response = await fetch(url, {
-        redirect: 'manual',
-        signal: controller.signal,
-        headers: { 'user-agent': USER_AGENT, accept: 'application/pdf,text/html;q=0.9,*/*;q=0.5' },
-      });
-    } catch (err) {
-      throw new FetchPathwayError(
-        controller.signal.aborted
-          ? `Timed out after ${TIMEOUT_MS / 1000}s fetching ${url.hostname}.`
-          : `Could not reach ${url.hostname}: ${(err as Error).message}`,
-      );
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: { 'user-agent': USER_AGENT, accept: 'application/pdf,text/html;q=0.9,*/*;q=0.5' },
+        });
+      } catch (err) {
+        throw new FetchPathwayError(
+          controller.signal.aborted
+            ? `Timed out after ${TIMEOUT_MS / 1000}s fetching ${url.hostname}.`
+            : `Could not reach ${url.hostname}: ${(err as Error).message}`,
+        );
+      }
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) throw new FetchPathwayError(`Redirect with no destination from ${url.hostname}.`);
+        url = await assertPublicUrl(new URL(location, url).toString());
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new FetchPathwayError(`${url.hostname} returned ${response.status} ${response.statusText}.`);
+      }
+
+      const declared = Number(response.headers.get('content-length') ?? 0);
+      if (declared > MAX_BYTES) {
+        throw new FetchPathwayError(`That file is ${Math.round(declared / 1e6)}MB; the limit is 30MB.`);
+      }
+
+      let body: Uint8Array;
+      try {
+        body = await readCapped(response, MAX_BYTES);
+      } catch (err) {
+        if (err instanceof FetchPathwayError) throw err;
+        throw new FetchPathwayError(
+          controller.signal.aborted
+            ? `Timed out after ${TIMEOUT_MS / 1000}s fetching ${url.hostname}.`
+            : `Could not read the response from ${url.hostname}: ${(err as Error).message}`,
+        );
+      }
+
+      return { url, contentType: response.headers.get('content-type') ?? '', body };
     } finally {
       clearTimeout(timer);
     }
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) throw new FetchPathwayError(`Redirect with no destination from ${url.hostname}.`);
-      url = await assertPublicUrl(new URL(location, url).toString());
-      continue;
-    }
-
-    if (!response.ok) {
-      throw new FetchPathwayError(`${url.hostname} returned ${response.status} ${response.statusText}.`);
-    }
-
-    const declared = Number(response.headers.get('content-length') ?? 0);
-    if (declared > MAX_BYTES) {
-      throw new FetchPathwayError(`That file is ${Math.round(declared / 1e6)}MB; the limit is 30MB.`);
-    }
-
-    const body = new Uint8Array(await response.arrayBuffer());
-    if (body.byteLength > MAX_BYTES) {
-      throw new FetchPathwayError('That file is larger than the 30MB limit.');
-    }
-
-    return { url, contentType: response.headers.get('content-type') ?? '', body };
   }
 
   throw new FetchPathwayError('Too many redirects.');

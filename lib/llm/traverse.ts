@@ -474,6 +474,18 @@ export async function traverse(options: TraverseOptions): Promise<Route> {
             return finish('needs_input', { question: check.question });
           }
 
+          // `verifyAcuity` returns null when it stands aside — which includes the
+          // case where the criteria demand a more severe band but no branch here
+          // leads to it. Falling through would advance on the compiled table's
+          // choice, i.e. the silent under-triage the verifier exists to prevent.
+          // Refuse to route and flag the graph instead, matching the model path.
+          if (!check && verdict?.decisive && verdict.band && next.acuity !== verdict.band) {
+            notes.push(
+              `The C-SSRS criteria give ${verdict.band} acuity, but no branch from "${current.label}" leads there. Not advancing; review the extracted graph.`,
+            );
+            return finish('ambiguous');
+          }
+
           const finalEdge = check?.kind === 'override' ? check.edge : edge;
           const finalNext = nodes.get(finalEdge.to);
           if (!finalNext) return finish('ambiguous');
@@ -588,10 +600,12 @@ export async function traverse(options: TraverseOptions): Promise<Route> {
           };
         } else if (verdict.band && !requiredEdge) {
           // Decisive band with nowhere to send it — the graph disagrees with the
-          // rules. Surface it rather than silently trusting either.
+          // rules. Refuse to advance rather than under-triage by falling through
+          // to whatever branch the model picked.
           notes.push(
-            `The C-SSRS criteria give ${verdict.band} acuity, but no branch from "${current.label}" leads there. Review the extracted graph.`,
+            `The C-SSRS criteria give ${verdict.band} acuity, but no branch from "${current.label}" leads there. Not advancing; review the extracted graph.`,
           );
+          return finish('ambiguous');
         } else if (chosenTarget && entryNodeIdsForBands.has(chosenTarget.id)) {
           // Decisive with no band means every criterion was ruled out, so an
           // acuity branch is wrong here.
